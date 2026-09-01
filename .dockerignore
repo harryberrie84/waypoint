@@ -30,5 +30,6 @@ pb_public_backups
 Thumbs.db
 *.local
 
-# Docs are not part of the image.
+# Docs and screenshots are not part of the image.
+docs
 *.md

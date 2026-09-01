@@ -12,6 +12,12 @@ household, a case file, a campaign, a small operation.
 AGPL-3.0. Run it, fork it, change it. If you run a modified copy as a service for
 other people, publish your changes. See [LICENSE](LICENSE).
 
+![A trip page with the tab menu open: notes, itinerary, calendar, map, kanban, tier
+list, budget, currency, sheet, flashcards, rota, bracket, moodboard, files, photos,
+people, weather, mindmap, links and flows](docs/screenshots/page-tabs.png)
+
+One page, with the tab menu open. Every tab reads only that page's own data.
+
 ## Install
 
 ```bash
@@ -30,6 +36,14 @@ proxy, a tunnel, a VPN). The app serves its API and its frontend from the same
 port, so nothing needs per-device configuration.
 
 ## What it does
+
+![The home screen: a greeting, four starter cards for a trip, a sprint, a D&D
+session and a weekly review, then Today, Agenda and Countdown tabs over recent
+pages](docs/screenshots/home.png)
+
+The first thing a new account sees. Pick a starter and you land on a populated
+page rather than an empty one.
+
 
 - **Documents** with a block editor: text, headings, tables, checklists, code,
   math, diagrams, callouts, toggles, embeds.
