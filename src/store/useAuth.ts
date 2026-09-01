@@ -84,8 +84,21 @@ export const useAuth = create<AuthState>((set) => ({
             /* ignore */
           }
         })
-        .catch(() => {
-          /* keep the cached session */
+        .catch((err: unknown) => {
+          // Offline or a server hiccup must NOT sign anyone out: the cached
+          // session is what keeps the app usable on a dropped connection, and
+          // that is why this was swallowed whole.
+          //
+          // A 401/403 is different. It is the server saying this token is dead:
+          // the account was removed, the password changed, or the database was
+          // restored from a backup. Keeping the session then leaves a UI that
+          // looks signed in and silently fails every write, with no way to tell
+          // from the inside that anything is wrong.
+          const status = (err as { status?: number } | null)?.status;
+          if (status === 401 || status === 403) {
+            pb.authStore.clear();
+            set({ user: null });
+          }
         });
     }
   },

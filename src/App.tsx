@@ -294,7 +294,12 @@ function Workspace() {
 
   // A brand-new account lands on the starter picker (first run, empty workspace)
   // instead of a blank page. Once any page exists, this never shows again.
-  const showPicker = loaded && !loadError && pageCount === 0 && !pickerDone;
+  //
+  // `?starter=1` forces it open whatever the page count, which is the only way
+  // to exercise first-run behaviour twice without wiping an account. It changes
+  // nothing else: picking a starter still just creates a page.
+  const forceStarter = new URLSearchParams(window.location.search).has('starter');
+  const showPicker = loaded && !loadError && (pageCount === 0 || forceStarter) && !pickerDone;
 
   // OS share target + deep links. The share target routes "Share → Waypoint" to
   // `/?text=…`; a push deep-link uses `?page=`/`?row=`. Consume them once after
