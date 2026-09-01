@@ -169,22 +169,40 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         workspaceMembersApi.list().catch(() => [] as WorkspaceMember[]),
         workspaceInvitesApi.list().catch(() => [] as WorkspaceInvite[]),
       ]);
-      if (!raw.length) throw new Error('no workspaces yet');
+      // A brand-new account: the collections answered, they are simply empty.
+      // Make a REAL workspace here rather than falling through to the synthetic
+      // default below. The synthetic one leaves usingDefault true, which makes
+      // activeWsForWrite() return '', so every page this account creates is
+      // written with workspace = "" and is then invisible to every rule that
+      // scopes by membership. The symptom is a first-run install that can create
+      // a page and then cannot edit it, with collab stuck connecting forever.
+      //
+      // If the create throws (collections genuinely missing, a pre-migration
+      // install) it lands in the catch below and the synthetic default still
+      // covers it, which is the case that branch was written for.
+      let rows = raw;
+      let seats = members;
+      if (!rows.length) {
+        const seeded = await workspacesApi.create('Workspace', '🗺️');
+        const seat = await workspaceMembersApi.create(seeded.id, u.id, u.name, 'admin');
+        rows = [seeded];
+        seats = [seat];
+      }
       // Keep an in-flight rename/icon edit against this refetch (same guard the
       // pages/tables echoes use), so a resync mid-edit can't revert it.
       const curWs = get().workspaces;
-      const workspaces = raw.map((r) => {
+      const workspaces = rows.map((r) => {
         const w = withLocalFlags(r);
         return keepPendingFields(curWs.find((x) => x.id === w.id), w, ['name', 'icon']);
       });
 
-      const active = pickActive(workspaces, members, u.id);
+      const active = pickActive(workspaces, seats, u.id);
       // The default bucket (for legacy empty-workspace records) is the user's
       // first private workspace, else the active one.
-      const { private: priv } = classifyWorkspaces(workspaces, members, u.id);
+      const { private: priv } = classifyWorkspaces(workspaces, seats, u.id);
       const defaultWorkspaceId = priv[0]?.id ?? active;
-      const roster = await buildRoster(members, active, false);
-      set({ workspaces, members, invites, roster, activeWorkspaceId: active, defaultWorkspaceId, usingDefault: false, ready: true });
+      const roster = await buildRoster(seats, active, false);
+      set({ workspaces, members: seats, invites, roster, activeWorkspaceId: active, defaultWorkspaceId, usingDefault: false, ready: true });
     } catch {
       // Pre-migration (collections missing or empty): synthesize a default so
       // the app runs unchanged. Names still resolve via the global users list.
