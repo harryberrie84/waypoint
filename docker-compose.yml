@@ -1,0 +1,28 @@
+# Waypoint, the whole app in one container.
+#
+#   docker compose up -d      then open http://localhost:8090
+#
+# The first account you register is a normal user. ADMIN_EMAIL/ADMIN_PASSWORD below
+# are for the PocketBase admin UI at /_/ , which you only need for SMTP and backups.
+
+services:
+  waypoint:
+    image: ghcr.io/harryberrie84/waypoint:latest
+    # To build from this checkout instead of pulling, comment out `image:` above
+    # and uncomment:
+    # build: .
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      # Everything lives here: the database, uploaded files, and your backups.
+      - waypoint_data:/pb/pb_data
+    environment:
+      # Optional. Set both to have the admin account created on first start;
+      # leave them out and PocketBase prints a one-time setup link in the logs.
+      # ADMIN_EMAIL: you@example.com
+      # ADMIN_PASSWORD: change-me-before-first-start
+      TZ: UTC
+
+volumes:
+  waypoint_data:

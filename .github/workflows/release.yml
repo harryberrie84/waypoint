@@ -1,0 +1,65 @@
+# Build the image and push it to GHCR when a version tag is pushed.
+#
+# This is what makes the install one command instead of a build: the compose file
+# people download pulls a published image, so nothing is compiled on their box.
+# It also moves the build to Linux permanently, which is where it has to happen
+# anyway because the native bindings are platform specific.
+#
+# Tagging v0.207.1 publishes :0.207.1, :0.207, and :latest. Pinning a version tag
+# is the rollback story: an install that breaks goes back to the previous number.
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The checks run here rather than in a separate workflow on purpose: a tag
+      # that cannot pass its own gate must not become an image people install.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+
+      # arm64 covers a Pi and the cheap ARM VPS hosts, which is a large share of
+      # self-hosters. It builds under emulation, so expect this job to take a
+      # while; correctness matters more than minutes on a tag build.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,33 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# PocketBase runtime data. pb_data is the database, never commit it.
+pb_data/
+pb_public/
+pb_public_backups/
+*.db
+*.db-shm
+*.db-wal
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editors and OS cruft
+.vscode/
+.idea/
+.vs/
+*.swp
+.DS_Store
+Thumbs.db
+*.local
+
+# Local scratch: notes, scripts and exports that are yours, not the project's
+/notes/
+/scratch/
+*.private.*

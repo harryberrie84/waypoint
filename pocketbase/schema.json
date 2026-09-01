@@ -1,0 +1,1585 @@
+[
+  {
+    "name": "users",
+    "type": "auth",
+    "system": false,
+    "schema": [
+      {
+        "system": false,
+        "id": "00014esfch",
+        "name": "name",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 120,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "000198ykay",
+        "name": "prefs",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      }
+    ],
+    "listRule": "id = @request.auth.id",
+    "viewRule": "@request.auth.id != \"\"",
+    "createRule": "",
+    "updateRule": "id = @request.auth.id",
+    "deleteRule": "id = @request.auth.id",
+    "options": {
+      "allowEmailAuth": true,
+      "allowOAuth2Auth": false,
+      "allowUsernameAuth": false,
+      "requireEmail": true,
+      "minPasswordLength": 8,
+      "onlyVerified": false
+    },
+    "id": "_pb_users_auth_",
+    "indexes": []
+  },
+  {
+    "name": "pages",
+    "type": "base",
+    "schema": [
+      {
+        "system": false,
+        "id": "0000v0a6jy",
+        "name": "title",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 500
+        }
+      },
+      {
+        "system": false,
+        "id": "0000zd4fhf",
+        "name": "icon",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000ur1jpp",
+        "name": "cover",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000ztoob8",
+        "name": "parent",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 60
+        }
+      },
+      {
+        "system": false,
+        "id": "0000uxomg4",
+        "name": "order",
+        "type": "number",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "noDecimal": false
+        }
+      },
+      {
+        "system": false,
+        "id": "00002xbgb3",
+        "name": "content",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000xgdxup",
+        "name": "kanban",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000uxs0sp",
+        "name": "owner",
+        "type": "relation",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": false,
+          "minSelect": null,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0001u9wstn",
+        "name": "workspace",
+        "type": "relation",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "wpcolworkspace1",
+          "cascadeDelete": false,
+          "minSelect": null,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0000l4prza",
+        "name": "publicToken",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 64
+        }
+      },
+      {
+        "system": false,
+        "id": "0000qhu5bw",
+        "name": "visibility",
+        "type": "select",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSelect": 1,
+          "values": [
+            "workspace",
+            "private"
+          ]
+        }
+      },
+      {
+        "system": false,
+        "id": "0000qzveyk",
+        "name": "editors",
+        "type": "relation",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": false,
+          "minSelect": null,
+          "maxSelect": null
+        }
+      },
+      {
+        "system": false,
+        "id": "0001tqcpyv",
+        "name": "viewers",
+        "type": "relation",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": false,
+          "minSelect": null,
+          "maxSelect": null
+        }
+      },
+      {
+        "system": false,
+        "id": "000076pc2s",
+        "name": "template",
+        "type": "bool",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {}
+      },
+      {
+        "system": false,
+        "id": "0000evzuia",
+        "name": "map",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000zd2p7c",
+        "name": "flow",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0001q518x6",
+        "name": "tierlist",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000uz1hbd",
+        "name": "rates",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000uzpfp1",
+        "name": "sheet",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000uqsiwp",
+        "name": "cards",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000zdafdg",
+        "name": "rota",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0001ohq0zi",
+        "name": "bracket",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "00004sie1s",
+        "name": "mindmap",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000zxhmnf",
+        "name": "photos",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000uskw5p",
+        "name": "files",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "00005m2a66",
+        "name": "defaultTab",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 32,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0000zdeo09",
+        "name": "ydoc",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 5000000,
+          "pattern": ""
+        }
+      }
+    ],
+    "listRule": "(@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id || viewers.id ?= @request.auth.id)) || (publicToken != \"\" && publicToken = @request.query.token)",
+    "viewRule": "(@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id || viewers.id ?= @request.auth.id)) || (publicToken != \"\" && publicToken = @request.query.token)",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id)",
+    "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id)",
+    "id": "wpcolpages00001",
+    "indexes": []
+  },
+  {
+    "name": "tables",
+    "type": "base",
+    "schema": [
+      {
+        "system": false,
+        "id": "0000ift378",
+        "name": "name",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 500
+        }
+      },
+      {
+        "system": false,
+        "id": "0000ot5qac",
+        "name": "columns",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 500000
+        }
+      },
+      {
+        "system": false,
+        "id": "00003e36ju",
+        "name": "owner",
+        "type": "relation",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": false,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0000tu1i6k",
+        "name": "workspace",
+        "type": "relation",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "wpcolworkspace1",
+          "cascadeDelete": false,
+          "minSelect": null,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0001wxhj76",
+        "name": "formKey",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      }
+    ],
+    "listRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "viewRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "id": "wpcoltables0001",
+    "indexes": []
+  },
+  {
+    "name": "table_rows",
+    "type": "base",
+    "schema": [
+      {
+        "system": false,
+        "id": "00006cqr9m",
+        "name": "table",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "wpcoltables0001",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "000063h0jx",
+        "name": "cells",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 500000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000l7pzhp",
+        "name": "position",
+        "type": "number",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "noDecimal": false
+        }
+      },
+      {
+        "system": false,
+        "id": "00008h6f69",
+        "name": "workspace",
+        "type": "relation",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "wpcolworkspace1",
+          "cascadeDelete": false,
+          "minSelect": null,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0001h0wyni",
+        "name": "parent",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "00016lhxra",
+        "name": "reactions",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "00012xnz1x",
+        "name": "content",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      }
+    ],
+    "listRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "viewRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "id": "wpcoltablerows1",
+    "indexes": []
+  },
+  {
+    "name": "comments",
+    "type": "base",
+    "schema": [
+      {
+        "system": false,
+        "id": "0001p5h0ll",
+        "name": "page",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "wpcolpages00001",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0000hqnmbp",
+        "name": "author",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "000168e8kw",
+        "name": "authorName",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 120
+        }
+      },
+      {
+        "system": false,
+        "id": "0001p58d3w",
+        "name": "body",
+        "type": "text",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 5000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000dfgcm8",
+        "name": "row",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 60
+        }
+      },
+      {
+        "system": false,
+        "id": "0000qjbrk4",
+        "name": "thread",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 60
+        }
+      },
+      {
+        "system": false,
+        "id": "00012hqumb",
+        "name": "mentions",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 20000
+        }
+      }
+    ],
+    "listRule": "@request.auth.id != \"\" && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "viewRule": "@request.auth.id != \"\" && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "createRule": "@request.auth.id != \"\" && author = @request.auth.id",
+    "updateRule": "author = @request.auth.id",
+    "deleteRule": "author = @request.auth.id",
+    "id": "wpcolcomments01",
+    "indexes": []
+  },
+  {
+    "name": "presence",
+    "type": "base",
+    "schema": [
+      {
+        "system": false,
+        "id": "00011lqnqa",
+        "name": "page",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "wpcolpages00001",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "00011lu7z2",
+        "name": "user",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "00016jfa89",
+        "name": "userName",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 120
+        }
+      },
+      {
+        "system": false,
+        "id": "00011lp12u",
+        "name": "mode",
+        "type": "select",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSelect": 1,
+          "values": [
+            "viewing",
+            "editing"
+          ]
+        }
+      },
+      {
+        "system": false,
+        "id": "000125a1mx",
+        "name": "heartbeat",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 40
+        }
+      },
+      {
+        "system": false,
+        "id": "0001bt1rqh",
+        "name": "cursor",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 5000,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0000t2whet",
+        "name": "focus",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 200,
+          "pattern": ""
+        }
+      }
+    ],
+    "listRule": "@request.auth.id != \"\" && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "viewRule": "@request.auth.id != \"\" && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "createRule": "@request.auth.id != \"\" && user = @request.auth.id",
+    "updateRule": "user = @request.auth.id",
+    "deleteRule": "user = @request.auth.id",
+    "id": "wpcolpresence01",
+    "indexes": []
+  },
+  {
+    "name": "workspaces",
+    "type": "base",
+    "schema": [
+      {
+        "system": false,
+        "id": "0001rdtc6z",
+        "name": "name",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 120
+        }
+      },
+      {
+        "system": false,
+        "id": "0001rdq6sp",
+        "name": "icon",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0001b35vsz",
+        "name": "owner",
+        "type": "relation",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": false,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0000y669mf",
+        "name": "tabletop",
+        "type": "bool",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {}
+      },
+      {
+        "system": false,
+        "id": "0001heuslw",
+        "name": "encrypted",
+        "type": "bool",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {}
+      }
+    ],
+    "listRule": "@request.auth.id != \"\" && workspace_members_via_workspace.user ?= @request.auth.id",
+    "viewRule": "@request.auth.id != \"\" && workspace_members_via_workspace.user ?= @request.auth.id",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": "owner = @request.auth.id",
+    "deleteRule": "owner = @request.auth.id",
+    "id": "wpcolworkspace1",
+    "indexes": []
+  },
+  {
+    "name": "workspace_members",
+    "type": "base",
+    "schema": [
+      {
+        "system": false,
+        "id": "0001r7bj6e",
+        "name": "workspace",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "wpcolworkspace1",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "00019xmbxm",
+        "name": "user",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0001ibisnp",
+        "name": "userName",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 120
+        }
+      },
+      {
+        "system": false,
+        "id": "00019xkc5x",
+        "name": "role",
+        "type": "select",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSelect": 1,
+          "values": [
+            "admin",
+            "editor",
+            "viewer"
+          ]
+        }
+      },
+      {
+        "system": false,
+        "id": "0001wsksxj",
+        "name": "publicKey",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 1000
+        }
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX idx_member_unique ON workspace_members (workspace, user)"
+    ],
+    "listRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "viewRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "createRule": "@request.auth.id != \"\" && @request.data.user = @request.auth.id && (@request.data.workspace.owner ?= @request.auth.id || (@collection.workspace_invites.workspace ?= @request.data.workspace && @collection.workspace_invites.email ?= @request.auth.email && @collection.workspace_invites.status ?= \"pending\"))",
+    "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "id": "wpcolwsmembers1"
+  },
+  {
+    "name": "workspace_invites",
+    "type": "base",
+    "schema": [
+      {
+        "system": false,
+        "id": "0000y1l8uf",
+        "name": "workspace",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "wpcolworkspace1",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0001swru32",
+        "name": "email",
+        "type": "text",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 255
+        }
+      },
+      {
+        "system": false,
+        "id": "0001l3b83o",
+        "name": "role",
+        "type": "select",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSelect": 1,
+          "values": [
+            "admin",
+            "editor",
+            "viewer"
+          ]
+        }
+      },
+      {
+        "system": false,
+        "id": "0001japg9w",
+        "name": "invitedBy",
+        "type": "relation",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": false,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0000u3avgg",
+        "name": "status",
+        "type": "select",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSelect": 1,
+          "values": [
+            "pending",
+            "accepted"
+          ]
+        }
+      }
+    ],
+    "listRule": "@request.auth.id != \"\" && (workspace.workspace_members_via_workspace.user ?= @request.auth.id || email = @request.auth.email)",
+    "viewRule": "@request.auth.id != \"\" && (workspace.workspace_members_via_workspace.user ?= @request.auth.id || email = @request.auth.email)",
+    "createRule": "@request.auth.id != \"\" && @request.data.workspace.owner ?= @request.auth.id",
+    "updateRule": null,
+    "deleteRule": "@request.auth.id != \"\" && (workspace.owner ?= @request.auth.id || email = @request.auth.email)",
+    "id": "wpcolwsinvites1",
+    "indexes": []
+  },
+  {
+    "name": "user_keys",
+    "type": "base",
+    "schema": [
+      {
+        "system": false,
+        "id": "00007492c1",
+        "name": "user",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0001rxbja8",
+        "name": "wrappedKey",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 4000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000j7tc5f",
+        "name": "pwSalt",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 200
+        }
+      },
+      {
+        "system": false,
+        "id": "00015av69w",
+        "name": "recoveryKey",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 4000
+        }
+      },
+      {
+        "system": false,
+        "id": "00001syfo1",
+        "name": "recoverySalt",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 200
+        }
+      },
+      {
+        "system": false,
+        "id": "00019ctwcc",
+        "name": "iterations",
+        "type": "number",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {}
+      },
+      {
+        "system": false,
+        "id": "0000cku0mo",
+        "name": "publicKey",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 1000
+        }
+      },
+      {
+        "system": false,
+        "id": "0001dzgo8r",
+        "name": "wrappedPrivateKey",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 4000
+        }
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX idx_user_keys_user ON user_keys (user)"
+    ],
+    "listRule": "@request.auth.id != \"\" && user = @request.auth.id",
+    "viewRule": "@request.auth.id != \"\" && user = @request.auth.id",
+    "createRule": "@request.auth.id != \"\" && @request.data.user = @request.auth.id",
+    "updateRule": "@request.auth.id != \"\" && user = @request.auth.id",
+    "deleteRule": "@request.auth.id != \"\" && user = @request.auth.id",
+    "id": "wpcoluserkeys01"
+  },
+  {
+    "name": "workspace_keys",
+    "type": "base",
+    "schema": [
+      {
+        "system": false,
+        "id": "0001ekqt51",
+        "name": "workspace",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "wpcolworkspace1",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0001dldwt7",
+        "name": "user",
+        "type": "relation",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "_pb_users_auth_",
+          "cascadeDelete": true,
+          "maxSelect": 1
+        }
+      },
+      {
+        "system": false,
+        "id": "0001tkefxm",
+        "name": "wrappedKey",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "max": 4000
+        }
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX idx_workspace_keys ON workspace_keys (workspace, user)"
+    ],
+    "listRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "viewRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "createRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+    "id": "wpcolwskeys0001"
+  },
+  {
+    "name": "yupdates",
+    "type": "base",
+    "id": "wpcolyupdates01",
+    "schema": [
+      {
+        "system": false,
+        "id": "0001eoaoto",
+        "name": "page",
+        "type": "text",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0000kzh6ag",
+        "name": "workspace",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0000zmr2lk",
+        "name": "author",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0001eo31af",
+        "name": "data",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 5000000,
+          "pattern": ""
+        }
+      }
+    ],
+    "indexes": [
+      "CREATE INDEX `idx_yupdates_page` ON `yupdates` (`page`)"
+    ],
+    "listRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
+    "viewRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": null,
+    "deleteRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))"
+  },
+  {
+    "name": "page_versions",
+    "type": "base",
+    "id": "wpcolpagevers01",
+    "schema": [
+      {
+        "system": false,
+        "id": "0001wpw0nm",
+        "name": "page",
+        "type": "text",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0001oqmks2",
+        "name": "workspace",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0001ngotli",
+        "name": "content",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 5000000,
+          "pattern": ""
+        }
+      }
+    ],
+    "indexes": [
+      "CREATE INDEX `idx_page_versions_page` ON `page_versions` (`page`)"
+    ],
+    "listRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
+    "viewRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": null,
+    "deleteRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))"
+  },
+  {
+    "name": "uploads",
+    "type": "base",
+    "id": "wpcoluploads001",
+    "schema": [
+      {
+        "system": false,
+        "id": "0001l6theg",
+        "name": "file",
+        "type": "file",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSelect": 1,
+          "maxSize": 104857600,
+          "mimeTypes": [],
+          "thumbs": [],
+          "protected": false
+        }
+      },
+      {
+        "system": false,
+        "id": "0001ls4l6h",
+        "name": "workspace",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0001w9vsrb",
+        "name": "owner",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      }
+    ],
+    "indexes": [],
+    "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
+    "viewRule": "",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": null,
+    "deleteRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id"
+  },
+  {
+    "name": "file_trash",
+    "type": "base",
+    "id": "wpcolfiletrash1",
+    "schema": [
+      {
+        "system": false,
+        "id": "0001q4e8ws",
+        "name": "workspace",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0001ggxy2e",
+        "name": "url",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 500,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0001rwmb6s",
+        "name": "name",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 300,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0001rwnl0o",
+        "name": "page",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0001szp90e",
+        "name": "removedBy",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0000htlb49",
+        "name": "removedByName",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 120,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "00019pq6ob",
+        "name": "status",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 20,
+          "pattern": ""
+        }
+      }
+    ],
+    "indexes": [],
+    "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
+    "viewRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
+    "deleteRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id"
+  },
+  {
+    "name": "reminders",
+    "type": "base",
+    "id": "wpcolreminders1",
+    "schema": [
+      {
+        "system": false,
+        "id": "0000sy2zag",
+        "name": "workspace",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 60,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "00019ly1jq",
+        "name": "fireAt",
+        "type": "text",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 40,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "0001g46gny",
+        "name": "target",
+        "type": "text",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 40,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "00012zhkxz",
+        "name": "recipients",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 20000
+        }
+      },
+      {
+        "system": false,
+        "id": "0000g8o5r9",
+        "name": "sent",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": 40,
+          "pattern": ""
+        }
+      }
+    ],
+    "indexes": [
+      "CREATE INDEX `idx_reminders_sent` ON `reminders` (`sent`)"
+    ],
+    "listRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
+    "viewRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
+    "deleteRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))"
+  }
+]

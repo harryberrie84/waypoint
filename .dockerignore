@@ -1,0 +1,34 @@
+# The build context carries source and config only. node_modules is reinstalled
+# inside the image (npm ci) so a host install, with its own platform bindings,
+# never leaks in. pb_data is somebody's live database and must never be baked
+# into an image.
+node_modules
+dist
+pb_data
+pb_public
+pb_public_backups
+*.tsbuildinfo
+*.db
+*.db-shm
+*.db-wal
+
+.git
+.gitignore
+.gitattributes
+.github
+
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+.vs
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.local
+
+# Docs are not part of the image.
+*.md

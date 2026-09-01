@@ -1,0 +1,672 @@
+/* The three base fonts, bundled. No font CDN, so an airgapped install renders
+   exactly like a connected one and nobody outside sees who is using this
+   Waypoint. All three are SIL Open Font License 1.1; the licences sit beside the
+   files in public/fonts/.
+
+   Latin and Latin Extended only. Anything outside those ranges falls back to the
+   system stack in the font variables below. Google ships one variable file per
+   family and subset, which is why the weights here share a file.
+
+   Regenerating: fetch the css2 URL with a browser user-agent, download the woff2
+   it names, keep the latin and latin-ext faces. */
+
+/* latin */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/fraunces-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/fraunces-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/fraunces-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/fraunces-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/fraunces-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/fraunces-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+/* latin */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* latin-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Palette + fonts as CSS variables so a per-device theme can recolor the app at
+   runtime (src/lib/theme.ts). The color vars are space-separated RGB channels,
+   Tailwind reads them as rgb(var(--token) / <alpha-value>), which is what keeps
+   opacity utilities (bg-clay/15, bg-coal/30, …) working. These defaults mirror
+   the original Clay hex exactly, so the unthemed render is pixel-identical.
+
+   No .dark var block: light/dark is still a `dark:` class toggle on <html>, and
+   each element's `dark:` variant already picks which token it reads (paper vs
+   coal). A custom theme's per-mode values are written inline on <html> by
+   applyTokens, which overrides these defaults. */
+:root {
+  --ink: 43 42 40;
+  --ink-soft: 91 88 84;
+  --ink-faint: 138 135 130;
+  --paper: 250 249 246;
+  --paper-panel: 243 241 236;
+  --paper-line: 230 227 220;
+  --coal: 26 25 23;
+  --coal-panel: 34 33 32;
+  --coal-line: 52 50 47;
+  --coal-text: 233 230 223;
+  --coal-soft: 166 163 156;
+  --clay: 224 90 134;
+  --clay-soft: 239 136 168;
+  --clay-wash: 252 227 236;
+  --ochre: 184 119 26;
+  --ochre-soft: 232 180 85;
+  --ochre-wash: 247 236 210;
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  .auth-input {
+    @apply w-full rounded-lg border border-paper-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-clay dark:border-coal-line dark:bg-coal dark:text-coal-text;
+  }
+}
+
+/* Touch screens have no hover, so controls that only appear on group-hover are
+   unreachable on a phone. Reveal them on no-hover (touch) devices. */
+@media (hover: none) {
+  .touch-visible {
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+}
+
+/* Keep fixed bottom UI clear of the iOS home indicator (PWA + viewport-fit=cover).
+   The env() falls back to 0 on browsers/displays without an inset. */
+.bottom-safe {
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+}
+.pb-safe {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Number cells use a custom +/- stepper (see NumberCell); the browser's native
+   spin buttons overlapped the digits, so drop them everywhere. */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+/* TipTap editor prose styling, hand-rolled to match the Waypoint palette in
+   both themes and keep the dependency surface minimal. Surfaces/fonts read the
+   theme vars; the terracotta prose accent (#b5563a) predates the clay token and
+   stays literal so the default render is untouched. */
+.tiptap {
+  line-height: 1.7;
+  font-size: 1rem;
+}
+.tiptap > * + * {
+  margin-top: 0.75em;
+}
+/* The page column is now wide enough for tables/embeds to breathe. Keep running
+   text at a comfortable measure; block embeds (tables, images, maps, embeds)
+   are left uncapped so they use the full width. */
+.tiptap > p,
+.tiptap > h1,
+.tiptap > h2,
+.tiptap > h3,
+.tiptap > ul,
+.tiptap > ol,
+.tiptap > blockquote,
+.tiptap > pre {
+  max-width: 48rem;
+}
+.tiptap h1 {
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-top: 1.4em;
+}
+.tiptap h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 1.3em;
+}
+.tiptap h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-top: 1.2em;
+}
+.tiptap ul,
+.tiptap ol {
+  padding-left: 1.4em;
+}
+.tiptap ul {
+  list-style: disc;
+}
+.tiptap ol {
+  list-style: decimal;
+}
+.tiptap li > p {
+  margin: 0;
+}
+.tiptap blockquote {
+  border-left: 3px solid #b5563a;
+  padding-left: 1em;
+  color: rgb(var(--ink-soft));
+  font-style: italic;
+}
+.dark .tiptap blockquote {
+  color: rgb(var(--coal-soft));
+}
+.tiptap code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: rgb(var(--paper-panel));
+  border: 1px solid rgb(var(--paper-line));
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.dark .tiptap code {
+  background: rgb(var(--coal-panel));
+  border-color: rgb(var(--coal-line));
+}
+.tiptap pre {
+  font-family: var(--font-mono);
+  background: rgb(var(--coal-panel));
+  color: rgb(var(--coal-text));
+  border-radius: 8px;
+  padding: 0.9em 1.1em;
+  overflow-x: auto;
+}
+.tiptap pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-size: 0.85em;
+}
+.tiptap hr {
+  border: none;
+  border-top: 1px solid rgb(var(--paper-line));
+  margin: 1.5em 0;
+}
+.dark .tiptap hr {
+  border-top-color: rgb(var(--coal-line));
+}
+.tiptap a {
+  color: #b5563a;
+  text-decoration: underline;
+}
+/* Highlight mark (see editor/Highlight.ts), swatch read from a data attr so it
+   themes per-mark, with a sensible default for marks that predate the picker. */
+.tiptap mark[data-hl] {
+  background-color: var(--hl, rgba(232, 180, 85, 0.45));
+  border-radius: 3px;
+  padding: 0 0.1em;
+  color: inherit;
+}
+.tiptap ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.2em;
+}
+.tiptap ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55em;
+}
+.tiptap ul[data-type='taskList'] li > label {
+  margin-top: 0.28em;
+  user-select: none;
+}
+.tiptap ul[data-type='taskList'] li > div {
+  flex: 1 1 auto;
+}
+.tiptap ul[data-type='taskList'] input[type='checkbox'] {
+  width: 1em;
+  height: 1em;
+  accent-color: #b5563a;
+  cursor: pointer;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgb(var(--ink-faint));
+  pointer-events: none;
+  height: 0;
+}
+.dark .tiptap p.is-editor-empty:first-child::before {
+  color: #6a675f;
+}
+.tiptap .ProseMirror-selectednode {
+  outline: 2px solid #b5563a;
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d8d4cc transparent;
+}
+.dark * {
+  scrollbar-color: #3a3733 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #d8d4cc;
+  border-radius: 4px;
+}
+.dark *::-webkit-scrollbar-thumb {
+  background: #3a3733;
+}
+
+/* toast entrance, short slide-up + fade; honours reduced-motion below */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.toast-in {
+  animation: toast-in 150ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-in { animation: none; }
+}
+
+/* Code block syntax highlighting (decorations from editor/CodeHighlight). Colours
+   tuned to read on the code block's tinted background in both themes. */
+.tiptap .tok-keyword { color: #c0455e; font-weight: 600; }
+.tiptap .tok-string { color: #5a9e4f; }
+.tiptap .tok-number { color: #c0892e; }
+.tiptap .tok-comment { color: #8a8f99; font-style: italic; }
+.dark .tiptap .tok-keyword { color: #f0879f; }
+.dark .tiptap .tok-string { color: #8fd483; }
+.dark .tiptap .tok-number { color: #e0b85c; }
+.dark .tiptap .tok-comment { color: #9aa0ad; }
+
+/* Side-by-side columns (editor/Columns). Real CSS rather than Tailwind arbitrary
+   classes so the flex row always applies inside the prose editor. Stacks on
+   narrow screens; on wider ones each column grows by its --col-grow weight. */
+.tiptap .col-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+.tiptap .col-row .tiptap-column {
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.025);
+}
+.dark .tiptap .col-row .tiptap-column {
+  background: rgba(255, 255, 255, 0.035);
+}
+/* Hint inside an empty column so it's obvious you can type there. */
+.tiptap .col-row .tiptap-column p.is-empty::before {
+  content: 'Write…';
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--ink-faint, #9a958c);
+}
+@media (min-width: 640px) {
+  .tiptap .col-row {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+  .tiptap .col-row .tiptap-column {
+    flex: var(--col-grow, 1) 1 0;
+  }
+}
+
+/* Inline live formula (editor/InlineFormula): a computed value sitting in text. */
+.tiptap .inline-formula {
+  background: rgb(var(--ochre-wash));
+  color: rgb(var(--ochre));
+  border-radius: 3px;
+  padding: 0 0.25em;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.tiptap .inline-formula:hover {
+  background: rgb(var(--ochre-soft));
+  color: #fff;
+}
+.dark .tiptap .inline-formula {
+  background: rgba(232, 180, 85, 0.18);
+  color: rgb(var(--ochre-soft));
+}
+.tiptap .inline-formula-err {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+.tiptap .inline-formula-edit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15em;
+  border-radius: 4px;
+  padding: 0 0.25em;
+  background: rgb(var(--paper-panel));
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.dark .tiptap .inline-formula-edit {
+  background: rgb(var(--coal-line));
+}
+
+/* Toggle / collapsible (editor/Toggle). A summary (title, always shown, with the
+   chevron at the gutter) and a content region that folds when data-open is false. */
+.tiptap .toggle {
+  position: relative;
+  padding-left: 1.5rem;
+  margin: 0.4em 0;
+}
+.tiptap .toggle-chevron {
+  position: absolute;
+  left: 0;
+  top: 0.15rem;
+  color: rgb(var(--ink-faint));
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 1px;
+}
+.tiptap .toggle-chevron:hover {
+  color: rgb(var(--clay));
+  background: rgb(var(--paper-panel));
+}
+.dark .tiptap .toggle-chevron:hover {
+  background: rgb(var(--coal-line));
+}
+.tiptap .toggle-summary {
+  font-weight: 500;
+}
+.tiptap .toggle-summary:empty::before {
+  content: 'Toggle title';
+  color: rgb(var(--ink-faint));
+  pointer-events: none;
+}
+.tiptap .toggle-content {
+  margin-top: 0.25em;
+  padding-left: 0.75rem;
+  border-left: 2px solid rgb(var(--paper-line));
+}
+.dark .tiptap .toggle-content {
+  border-left-color: rgb(var(--coal-line));
+}
+.tiptap .toggle-content > * + * {
+  margin-top: 0.35em;
+}
+.tiptap .toggle[data-open='false'] .toggle-content {
+  display: none;
+}
+
+/* Inline comment mark (editor/InlineComment): a clickable highlighted span over
+   commented text, distinct from the colour highlight. */
+.tiptap .inline-comment {
+  background: rgba(184, 119, 26, 0.16);
+  border-bottom: 2px solid rgba(184, 119, 26, 0.55);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.tiptap .inline-comment:hover {
+  background: rgba(184, 119, 26, 0.28);
+}
+.dark .tiptap .inline-comment {
+  background: rgba(232, 180, 85, 0.14);
+  border-bottom-color: rgba(232, 180, 85, 0.5);
+}
+/* The clickable comment badge a decoration draws after a commented run. */
+.tiptap .comment-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  vertical-align: text-top;
+  margin: 0 1px;
+  padding: 0 3px;
+  height: 15px;
+  border-radius: 7px;
+  background: rgb(var(--ochre-wash));
+  color: rgb(var(--ochre));
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  vertical-align: super;
+}
+.tiptap .comment-badge:hover {
+  background: rgb(var(--ochre-soft));
+  color: #fff;
+}
+.dark .tiptap .comment-badge {
+  background: rgba(232, 180, 85, 0.18);
+  color: rgb(var(--ochre-soft));
+}
+
+/* Brief highlight on the element a search hit scrolled to (editor/Editor). */
+.search-flash {
+  border-radius: 0.375rem;
+  animation: search-flash 1.5s ease-out;
+}
+@keyframes search-flash {
+  0%, 35% { background-color: rgba(192, 86, 58, 0.20); box-shadow: 0 0 0 4px rgba(192, 86, 58, 0.12); }
+  100% { background-color: transparent; box-shadow: 0 0 0 4px transparent; }
+}
+
+/* Live collaboration cursors (CollaborationCaret). The caret is a thin coloured
+   bar (its colour is set inline per user). The name label sits above it as a
+   small coloured nub by default and animates OUT to the full name on hover. The
+   selection is highlighted in the same colour. Purely decorative overlays, they
+   never affect the text or block typing (the bar is pointer-events:none). */
+.collaboration-carets__caret {
+  border-left-width: 2px;
+  border-left-style: solid;
+  border-right: none;
+  margin-left: -1px;
+  margin-right: -1px;
+  position: relative;
+  box-sizing: border-box;
+  word-break: normal;
+  pointer-events: none;
+}
+.collaboration-carets__label {
+  position: absolute;
+  top: -0.1em;
+  left: -1px;
+  transform: translateY(-100%);
+  transform-origin: bottom left;
+  border-radius: 4px 4px 4px 1px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 0;
+  max-width: 6px;         /* collapsed to a small coloured nub */
+  overflow: hidden;
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
+  pointer-events: auto;   /* the nub is hoverable even though the bar isn't */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: max-width 200ms cubic-bezier(0.22, 1, 0.36, 1), padding 200ms ease, opacity 160ms ease;
+}
+.collaboration-carets__label:hover {
+  max-width: 16rem;
+  padding: 3px 7px;
+}
+.ProseMirror-yjs-selection {
+  border-radius: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .collaboration-carets__label { transition: none; }
+}
