@@ -1356,8 +1356,9 @@ test('normalizeEmail lowercases + trims so the claim hook matches the signup', (
 });
 
 test('readInviteFromSearch pulls the prefill, ignores junk', () => {
-  eq(readInviteFromSearch('?invite=bob%40x.com&ws=Fukuoka%20Trip'), { email: 'bob@x.com', workspace: 'Fukuoka Trip' });
-  eq(readInviteFromSearch('?invite=anna@x.com'), { email: 'anna@x.com', workspace: '' });
+  eq(readInviteFromSearch('?invite=bob%40x.com&ws=Fukuoka%20Trip'), { email: 'bob@x.com', workspace: 'Fukuoka Trip', token: '' });
+  eq(readInviteFromSearch('?invite=anna@x.com'), { email: 'anna@x.com', workspace: '', token: '' });
+  eq(readInviteFromSearch('?invite=anna@x.com&t=abc_-123'), { email: 'anna@x.com', workspace: '', token: 'abc_-123' }, 'the one-time invite secret rides along');
   eq(readInviteFromSearch('?invite=notanemail'), null, 'must look like an email');
   eq(readInviteFromSearch(''), null, 'no param → null');
   eq(readInviteFromSearch('?other=1'), null, 'unrelated query → null');

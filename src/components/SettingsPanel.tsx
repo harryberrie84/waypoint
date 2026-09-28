@@ -492,10 +492,15 @@ export function SettingsPanel({ open, onClose, initial = 'members' }: Props) {
     }
     setSending(true);
     setErr(null);
-    const ok = await invite(check.email, inviteRole);
+    const link = await invite(check.email, inviteRole);
     setSending(false);
-    if (ok) setEmail('');
-    else setErr('Could not send the invite.');
+    if (link) {
+      setEmail('');
+      toastWithAction('Invite sent. You can also send the link yourself.', {
+        label: 'Copy link',
+        run: () => void navigator.clipboard?.writeText(link).then(() => toast('Invite link copied')),
+      });
+    } else setErr('Could not send the invite.');
   };
 
   const isOnline = (userId: string) => userId === me?.id || online.has(userId);

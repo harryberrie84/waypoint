@@ -7,7 +7,7 @@ const allowed = (r, what) => ok(r.status >= 200 && r.status < 300, `${what}: exp
 
 export const SETUPS = [
   { label: 'every hook, as the Docker image runs', options: {} },
-  { label: 'only the invite email hook, as live runs', options: { onlyHooks: ['invite_email.pb.js'] } },
+  { label: 'only the invite hooks, as live runs', options: { onlyHooks: ['invite_email.pb.js', 'invite_claim.pb.js'] } },
 ];
 
 export default async function () {
@@ -69,17 +69,115 @@ async function run({ label, options }) {
       async () => refused(await api.update('pages', page.id, { workspace: outsiderWs.id }, owner.token), 'owner moves page to outsider space'));
 
     await check('an invite grants the role it was sent with, not a bigger one',
-      'Otherwise anyone invited as a viewer can accept as admin.',
+      'Otherwise anyone invited as a viewer can accept as admin, for example by pairing their invite with someone else’s pending admin invite.',
       async () => {
         const late = await api.signup('late');
-        await api.must(api.create('workspace_invites', { workspace: ws.id, email: late.email, role: 'viewer', invitedBy: owner.id, status: 'pending' }, owner.token), 'invite');
+        const other = await api.signup('other');
+        await api.must(api.create('workspace_invites', { workspace: ws.id, email: other.email, role: 'admin', invitedBy: owner.id, status: 'pending', token: api.inviteToken() }, owner.token), 'admin invite for someone else');
+        const token = api.inviteToken();
+        await api.must(api.create('workspace_invites', { workspace: ws.id, email: late.email, role: 'viewer', invitedBy: owner.id, status: 'pending', token }, owner.token), 'viewer invite');
+        refused(await api.create('workspace_members', { workspace: ws.id, user: late.id, role: 'admin' }, late.token), 'invitee seats self as admin');
+        refused(await api.create('workspace_members', { workspace: ws.id, user: late.id, role: 'viewer' }, late.token), 'invitee seats self directly');
+        allowed(await api.call('POST', '/api/waypoint/invites/claim', { token }, late.token), 'claim with the link');
         const seated = await api.list('workspace_members', late.token, `&filter=${encodeURIComponent(`user="${late.id}" && workspace="${ws.id}"`)}`);
-        if (seated.length) {
-          ok(seated[0].role === 'viewer', `the hook seated the invitee as ${seated[0].role}, not viewer`);
-          return;
-        }
-        refused(await api.create('workspace_members', { workspace: ws.id, user: late.id, role: 'admin' }, late.token), 'accept as admin');
-        allowed(await api.create('workspace_members', { workspace: ws.id, user: late.id, role: 'viewer' }, late.token), 'accept as viewer');
+        ok(seated.length === 1 && seated[0].role === 'viewer', `seated as ${seated.map((m) => m.role).join()}, expected viewer`);
+      });
+
+    await check('an invite only seats the person it was sent to',
+      'Anyone could register an account under the invited address before its owner did and take the seat, admin role included; nothing checked that the address was theirs.',
+      async () => {
+        const squatter = await api.signup('squatter');
+        const target = `target-${Date.now().toString(36)}@example.org`;
+        const token = api.inviteToken();
+        await api.must(api.create('workspace_invites', { workspace: ws.id, email: target, role: 'admin', invitedBy: owner.id, status: 'pending', token }, owner.token), 'invite');
+        const early = await api.call('POST', '/api/collections/users/records', { email: target, password: 'Passw0rd!2345', passwordConfirm: 'Passw0rd!2345', name: 'early' });
+        allowed(early, 'someone registers the invited address first');
+        const auth = await api.must(api.call('POST', '/api/collections/users/auth-with-password', { identity: target, password: 'Passw0rd!2345' }), 'sign in');
+        const noLink = await api.must(api.call('POST', '/api/waypoint/invites/claim', {}, auth.token), 'claim without the link');
+        ok(noLink.workspaces.length === 0, 'an unverified account was seated without the invite link');
+        const seated = await api.list('workspace_members', owner.token, `&filter=${encodeURIComponent(`user="${auth.record.id}"`)}`);
+        ok(seated.length === 0, 'signing up or signing in seated an unverified account');
+        const wrong = await api.must(api.call('POST', '/api/waypoint/invites/claim', { token }, squatter.token), 'link used by another account');
+        ok(wrong.workspaces.length === 0 && wrong.reason === 'other-email', `a forwarded link seated another account (${JSON.stringify(wrong)})`);
+        const right = await api.must(api.call('POST', '/api/waypoint/invites/claim', { token }, auth.token), 'link used by the invited address');
+        ok(right.workspaces.includes(ws.id), 'the link did not seat the invited address');
+        const again = await api.must(api.call('POST', '/api/waypoint/invites/claim', { token }, auth.token), 'link used twice');
+        ok(again.workspaces.length === 0, 'an invite link worked twice');
+        const stored = (await api.list('workspace_invites', owner.token)).find((i) => i.email === target);
+        ok(stored && !JSON.stringify(stored).includes(token), 'the invite secret is stored readable');
+      });
+
+    await check('a verified address is seated without the link',
+      'Someone who proved the address is theirs should not have to dig out the email.',
+      async () => {
+        const known = await api.signup('known');
+        const admin = client(pb.url);
+        allowed(await admin.call('PATCH', `/api/collections/users/records/${known.id}`, { verified: true }, pb.adminToken), 'mark verified');
+        await api.must(api.create('workspace_invites', { workspace: ws.id, email: known.email, role: 'editor', invitedBy: owner.id, status: 'pending', token: api.inviteToken() }, owner.token), 'invite');
+        await api.must(api.call('POST', '/api/waypoint/invites/claim', {}, known.token), 'claim');
+        const seated = await api.list('workspace_members', known.token, `&filter=${encodeURIComponent(`user="${known.id}" && workspace="${ws.id}"`)}`);
+        ok(seated.length === 1, 'a verified invitee was not seated');
+      });
+
+    await check('a viewer can read but not change anything',
+      'The viewer role was only a label: every write rule checked membership, not role, so a viewer could edit, delete pages and wipe backups straight through the API.',
+      async () => {
+        const t = await api.must(api.create('tables', { name: 'vt', workspace: ws.id }, owner.token), 'table');
+        const r = await api.must(api.create('table_rows', { table: t.id, workspace: ws.id, cells: {} }, owner.token), 'row');
+        const v = await api.must(api.create('page_versions', { page: page.id, workspace: ws.id, content: '{}' }, owner.token), 'version');
+        ok((await api.list('pages', viewer.token)).some((p) => p.id === page.id), 'the viewer cannot read the page');
+        ok((await api.list('table_rows', viewer.token)).some((x) => x.id === r.id), 'the viewer cannot read the row');
+        refused(await api.create('pages', { title: 'v', workspace: ws.id, owner: viewer.id }, viewer.token), 'viewer creates a page');
+        refused(await api.update('pages', page.id, { title: 'viewer was here' }, viewer.token), 'viewer edits a page');
+        refused(await api.remove('pages', page.id, viewer.token), 'viewer deletes a page');
+        refused(await api.create('tables', { name: 'v', workspace: ws.id }, viewer.token), 'viewer creates a table');
+        refused(await api.update('tables', t.id, { name: 'v' }, viewer.token), 'viewer renames a table');
+        refused(await api.remove('tables', t.id, viewer.token), 'viewer deletes a table');
+        refused(await api.create('table_rows', { table: t.id, workspace: ws.id, cells: {} }, viewer.token), 'viewer adds a row');
+        refused(await api.update('table_rows', r.id, { cells: { a: 1 } }, viewer.token), 'viewer edits a row');
+        refused(await api.remove('table_rows', r.id, viewer.token), 'viewer deletes a row');
+        refused(await api.create('yupdates', { page: page.id, workspace: ws.id, data: 'AAAA' }, viewer.token), 'viewer types into a page (Yjs)');
+        refused(await api.remove('page_versions', v.id, viewer.token), 'viewer deletes a backup');
+        refused(await api.create('comments', { page: page.id, author: viewer.id, authorName: 'V', body: 'x' }, viewer.token), 'viewer comments');
+        refused(await api.create('file_trash', { workspace: ws.id, url: '/api/files/x', name: 'x', status: 'pending' }, viewer.token), 'viewer trashes a file');
+        allowed(await api.create('presence', { page: page.id, user: viewer.id, mode: 'viewing' }, viewer.token), 'viewer shows as present');
+      });
+
+    await check('being an editor somewhere else does not make you an editor here',
+      'Role checks must look at the membership for this workspace, not any membership that happens to say editor.',
+      async () => {
+        const elsewhere = await api.workspace(viewer, 'Viewer own space');
+        ok(!!elsewhere.id, 'the viewer has their own workspace as admin');
+        refused(await api.update('pages', page.id, { title: 'x' }, viewer.token), 'viewer edits the owner page while admin elsewhere');
+      });
+
+    await check('someone listed as a viewer of one page cannot edit that page',
+      'Page sharing lets an owner make a colleague a viewer of one page; the server let them edit it anyway.',
+      async () => {
+        const colleague = await api.signup('colleague');
+        await api.invite(owner, ws, colleague, 'editor');
+        const third = await api.signup('third');
+        await api.invite(owner, ws, third, 'editor');
+        const shared = await api.must(api.create('pages', { title: 'shared', workspace: ws.id, owner: owner.id, visibility: 'workspace', viewers: [third.id, colleague.id] }, owner.token), 'page with two page viewers');
+        refused(await api.update('pages', shared.id, { title: 'x' }, colleague.token), 'page viewer edits');
+        const promoted = await api.must(api.create('pages', { title: 'both', workspace: ws.id, owner: owner.id, visibility: 'workspace', viewers: [colleague.id], editors: [colleague.id] }, owner.token), 'page where they are an editor too');
+        allowed(await api.update('pages', promoted.id, { title: 'y' }, colleague.token), 'listed as editor wins over viewer');
+        const open = await api.must(api.create('pages', { title: 'open', workspace: ws.id, owner: owner.id, visibility: 'workspace' }, owner.token), 'plain page');
+        allowed(await api.update('pages', open.id, { title: 'y' }, colleague.token), 'editor edits a page nobody restricted');
+      });
+
+    await check('records that belong to no workspace are readable by nobody',
+      'Backups, Yjs edits and reminders with an empty workspace were readable and deletable by any signed-in account.',
+      async () => {
+        const admin = client(pb.url);
+        const orphanUpdate = await admin.must(admin.create('yupdates', { page: page.id, workspace: '', data: 'AAAA' }, pb.adminToken), 'orphan yupdate');
+        const orphanVersion = await admin.must(admin.create('page_versions', { page: page.id, workspace: '', content: '{"secret":1}' }, pb.adminToken), 'orphan version');
+        const orphanReminder = await admin.must(admin.create('reminders', { workspace: '', fireAt: '2030-01-01T00:00', target: 'x', recipients: [] }, pb.adminToken), 'orphan reminder');
+        ok(!(await api.list('yupdates', outsider.token)).some((x) => x.id === orphanUpdate.id), 'an outsider lists an orphan Yjs update');
+        ok(!(await api.list('page_versions', outsider.token)).some((x) => x.id === orphanVersion.id), 'an outsider lists an orphan backup');
+        ok(!(await api.list('reminders', outsider.token)).some((x) => x.id === orphanReminder.id), 'an outsider lists an orphan reminder');
+        refused(await api.remove('page_versions', orphanVersion.id, outsider.token), 'outsider deletes an orphan backup');
+        refused(await api.remove('yupdates', orphanUpdate.id, outsider.token), 'outsider deletes an orphan Yjs update');
       });
 
     await check('everything the app does day to day is still allowed',
@@ -88,6 +186,8 @@ async function run({ label, options }) {
         const member = await api.signup('member');
         const m = await api.invite(owner, ws, member, 'editor');
         allowed(await api.update('workspace_members', m.id, { role: 'viewer' }, owner.token), 'owner changes a role');
+        refused(await api.create('pages', { title: 'm', workspace: ws.id, owner: member.id }, member.token), 'a member just made viewer creates a page');
+        allowed(await api.update('workspace_members', m.id, { role: 'editor' }, owner.token), 'owner changes it back');
         allowed(await api.update('workspace_members', m.id, { publicKey: 'pk', userName: 'M' }, member.token), 'member sets own key and name');
         const p = await api.create('pages', { title: 'm', workspace: ws.id, owner: member.id }, member.token);
         allowed(p, 'member creates a page');

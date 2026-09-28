@@ -11,9 +11,11 @@ import {
   toWorkspaceInvite as toInviteRecord,
 } from '../lib/api';
 import type { Workspace, WorkspaceMember, WorkspaceInvite, WorkspaceRole, NumberStyle } from '../types';
-import { roleInWorkspace, classifyWorkspaces, pendingInvitesFor } from '../lib/workspace';
+import { roleInWorkspace, classifyWorkspaces } from '../lib/workspace';
+import { newInviteToken, pendingInviteToken, forgetInviteToken } from '../lib/inviteToken';
 import { beginWrite, endWrite, keepPendingFields } from '../lib/proseSync';
 import { useData } from './useData';
+import { toast } from './useToast';
 
 // ---------------------------------------------------------------------------
 // Workspace store (feature 4)
@@ -116,7 +118,7 @@ interface WorkspaceState {
   setWorkspaceIcon: (id: string, icon: string) => Promise<void>;
   deleteWorkspace: (workspaceId: string) => Promise<boolean>;
   claimMyInvites: () => Promise<string[]>;
-  invite: (email: string, role: WorkspaceRole) => Promise<boolean>;
+  invite: (email: string, role: WorkspaceRole) => Promise<string | null>;
   cancelInvite: (inviteId: string) => Promise<void>;
   removeMember: (memberId: string) => Promise<void>;
   setMemberRole: (memberId: string, role: WorkspaceRole) => Promise<void>;
@@ -454,43 +456,32 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   claimMyInvites: async () => {
     const u = me();
     if (!u.id || !u.email) return [];
-    let invites: WorkspaceInvite[] = [];
+    const token = pendingInviteToken();
     try {
-      invites = await workspaceInvitesApi.list();
-    } catch {
-      return []; // collections missing or nothing visible, nothing to claim
+      const { workspaces, reason } = await workspaceInvitesApi.claim(token);
+      if (token) forgetInviteToken();
+      if (reason === 'other-email') toast('That invite was sent to a different email address. Sign in with that address to join.', 'error');
+      else if (reason === 'expired') toast('That invite has expired. Ask for a new one.', 'error');
+      else if (reason === 'unknown') toast('That invite has already been used or was withdrawn.', 'error');
+      return workspaces;
+    } catch (err) {
+      console.error('[workspace] claiming invites failed', err);
+      return [];
     }
-    const mine = pendingInvitesFor(u.email, invites);
-    const targets: string[] = [];
-    for (const inv of mine) {
-      try {
-        await workspaceMembersApi.create(inv.workspace, u.id, u.name, inv.role);
-      } catch (err) {
-        // A unique-index hit means we're already a member (harmless, e.g. the
-        // server hook beat us to it). A 403 means the workspace_members create
-        // rule wasn't relaxed for invitees; that's the one to surface.
-        console.error('[workspace] claim failed for invite ' + inv.id, err);
-      }
-      if (!targets.includes(inv.workspace)) targets.push(inv.workspace);
-      try {
-        await workspaceInvitesApi.remove(inv.id); // clear the pending invite
-      } catch {
-        /* leave it; a stale pending row is cosmetic */
-      }
-    }
-    return targets;
   },
 
   invite: async (email, role) => {
     const id = get().activeWorkspaceId;
-    if (!id || id === DEFAULT_ID) return false;
+    if (!id || id === DEFAULT_ID) return null;
     try {
-      const inv = await workspaceInvitesApi.create(id, email, role);
+      const token = newInviteToken();
+      const inv = await workspaceInvitesApi.create(id, email, role, token);
       set((s) => ({ invites: [inv, ...s.invites.filter((i) => i.id !== inv.id)] }));
-      return true;
+      const wsName = get().workspaces.find((w) => w.id === id)?.name ?? '';
+      return `${window.location.origin}/?invite=${encodeURIComponent(inv.email)}&ws=${encodeURIComponent(wsName)}&t=${encodeURIComponent(token)}`;
     } catch (err) {
       console.error('[workspace] invite failed', err);
-      return false;
+      return null;
     }
   },
 

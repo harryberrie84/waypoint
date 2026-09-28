@@ -15,8 +15,9 @@ export default async function () {
     const auth = await api.must(api.call('POST', '/api/collections/users/auth-with-password', { identity: owner.email, password: owner.password }), 'owner token');
     const ws = (await api.list('workspaces', auth.token))[0];
     const memberEmail = `member-${Date.now()}@example.org`;
-    await api.must(api.create('workspace_invites', { workspace: ws.id, email: memberEmail, role: 'editor', invitedBy: auth.record.id, status: 'pending' }, auth.token), 'invite');
-    await registerInUi(b, url, 'member', memberEmail);
+    const token = api.inviteToken();
+    await api.must(api.create('workspace_invites', { workspace: ws.id, email: memberEmail, role: 'editor', invitedBy: auth.record.id, status: 'pending', token }, auth.token), 'invite');
+    await registerInUi(b, url, 'member', memberEmail, `/?invite=${encodeURIComponent(memberEmail)}&t=${encodeURIComponent(token)}`);
     await waitFor(async () => (await sidebar(b).getByText('Trip', { exact: true }).count()) > 0, "Trip in the member's sidebar", 15000);
     await sidebar(b).getByText('Trip', { exact: true }).first().click();
     await b.getByRole('button', { name: 'Comments' }).first().click();

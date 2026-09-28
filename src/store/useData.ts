@@ -76,6 +76,19 @@ function resolveAutomations(table: { automations?: Automation[] | null; id: stri
 // Guard so automation-applied writes don't re-trigger automations (no loops).
 let automationRunning = false;
 
+let lastViewerNotice = 0;
+function viewerOnly(workspaceId?: string, quiet = false): boolean {
+  if (useWorkspace.getState().myRole(workspaceId || undefined) !== 'viewer') return false;
+  if (quiet) return true;
+  const now = Date.now();
+  if (now - lastViewerNotice > 4000) {
+    lastViewerNotice = now;
+    toast('You can view this workspace but not change it. Ask an admin for edit access.', 'error');
+  }
+  return true;
+}
+
+
 const unsavedRows = new Set<string>();
 const rowKeyAlias = new Map<string, string>();
 
@@ -1724,6 +1737,7 @@ export const useData = create<DataState>((set, get) => ({
   // --- pages --------------------------------------------------------------
 
   createPage: async (parentId, activate = true) => {
+    if (viewerOnly()) return null;
     const siblings = Object.values(get().pages).filter((p) => p.parent === parentId && !p.trashed);
     try {
       const page = await pagesApi.create({
@@ -2147,6 +2161,7 @@ export const useData = create<DataState>((set, get) => ({
   // Deep-duplicate a page: clones its embedded tables (so the copy is fully
   // independent), then the page, then its child pages recursively.
   duplicatePage: async (pageId, parentOverride, rename = true) => {
+    if (viewerOnly(get().pages[pageId]?.workspace)) return null;
     const state = get();
     const src = state.pages[pageId];
     if (!src) return null;
@@ -2278,6 +2293,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   setPageCover: (pageId, cover) => {
+    if (viewerOnly(get().pages[pageId]?.workspace)) return;
     set((s) => {
       const p = s.pages[pageId];
       if (!p) return s;
@@ -3591,6 +3607,7 @@ export const useData = create<DataState>((set, get) => ({
 
   // Helper-free recursive descendant collection used by trash/restore/delete.
   trashPage: async (id) => {
+    if (viewerOnly(get().pages[id]?.workspace)) return;
     const pages = get().pages;
     const ids: string[] = [];
     const collect = (pid: string) => {
@@ -3660,6 +3677,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   deletePage: async (id) => {
+    if (viewerOnly(get().pages[id]?.workspace)) return;
     // Collect descendants client-side and delete deepest-first.
     const pages = get().pages;
     const toRemove: string[] = [];
@@ -3725,6 +3743,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   renamePage: (id, title) => {
+    if (viewerOnly(get().pages[id]?.workspace)) return;
     set((s) => {
       const page = s.pages[id];
       if (!page) return s;
@@ -3775,6 +3794,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   setPageIcon: (id, icon) => {
+    if (viewerOnly(get().pages[id]?.workspace)) return;
     set((s) => {
       const page = s.pages[id];
       if (!page) return s;
@@ -3798,6 +3818,7 @@ export const useData = create<DataState>((set, get) => ({
   bumpPageCollab: (pageId) => set((s) => ({ pageCollabNonce: { ...s.pageCollabNonce, [pageId]: (s.pageCollabNonce[pageId] ?? 0) + 1 } })),
 
   setPageContent: (id, content) => {
+    if (viewerOnly(get().pages[id]?.workspace, true)) return;
     const prevContent = get().pages[id]?.content ?? null;
     // Data-loss guards. Page content is always a doc object or an `enc:` envelope
     // string, never null. And an encrypted page must never be replaced by an empty
@@ -4126,6 +4147,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   movePage: (id, newParentId, newOrder) => {
+    if (viewerOnly(get().pages[id]?.workspace)) return;
     const before = get().pages[id];
     const prevParent = before?.parent ?? '';
     const prevOrder = before?.order ?? 0;
@@ -4232,6 +4254,7 @@ export const useData = create<DataState>((set, get) => ({
   // --- tables -------------------------------------------------------------
 
   createTable: async (name) => {
+    if (viewerOnly()) return null;
     const colA = uid('c');
     const colB = uid('c');
     const columns: Column[] = [
@@ -4256,6 +4279,7 @@ export const useData = create<DataState>((set, get) => ({
   // columns from the header row with types inferred, rows from the data. Reuses
   // the CSV import planner so a numeric column becomes a number, etc.
   createTableFromData: async (name, headers, rows) => {
+    if (viewerOnly()) return null;
     try {
       const ws = activeWsForWrite();
       const { newColumns, resolve } = planImport([], { headers, rows });
@@ -4283,6 +4307,7 @@ export const useData = create<DataState>((set, get) => ({
   // column, etc. The matching view config is persisted so the embed opens in
   // that view rather than the grid.
   createTablePreset: async (preset) => {
+    if (viewerOnly()) return null;
     const { columns, view } = buildTablePreset(preset);
     try {
       const ws = activeWsForWrite();
@@ -4356,6 +4381,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   renameTable: (id, name) => {
+    if (viewerOnly(get().tables[id]?.workspace)) return;
     set((s) => {
       const tbl = s.tables[id];
       if (!tbl) return s;
@@ -4422,6 +4448,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   addColumn: (tableId, type) => {
+    if (viewerOnly(get().tables[tableId]?.workspace)) return;
     let nextColumns: Column[] = [];
     set((s) => {
       const tbl = s.tables[tableId];
@@ -4569,6 +4596,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   updateColumn: (tableId, columnId, patch) => {
+    if (viewerOnly(get().tables[tableId]?.workspace)) return;
     let nextColumns: Column[] = [];
     set((s) => {
       const tbl = s.tables[tableId];
@@ -4596,6 +4624,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   deleteColumn: (tableId, columnId) => {
+    if (viewerOnly(get().tables[tableId]?.workspace)) return;
     let nextColumns: Column[] = [];
     const affectedRows: TableRow[] = [];
     set((s) => {
@@ -4724,6 +4753,7 @@ export const useData = create<DataState>((set, get) => ({
   // --- rows ---------------------------------------------------------------
 
   addRow: async (tableId, initialCells, parentId = '') => {
+    if (viewerOnly(get().tables[tableId]?.workspace)) return null;
     const existing = Object.values(get().rows).filter((r) => r.table === tableId);
     const position = existing.length;
     const autoCells = automationsForRowCreated(resolveAutomations(get().tables[tableId]));
@@ -4801,6 +4831,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   deleteRow: async (rowId, opts) => {
+    if (viewerOnly(get().rows[rowId]?.workspace ?? get().tables[get().rows[rowId]?.table ?? '']?.workspace)) return [];
     const root = get().rows[rowId];
     if (!root) return [];
     const all = Object.values(get().rows).filter((r) => r.table === root.table);
@@ -4875,6 +4906,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   setCell: (rowId, columnId, value) => {
+    if (viewerOnly(get().rows[rowId]?.workspace ?? get().tables[get().rows[rowId]?.table ?? '']?.workspace)) return;
     // Refuse to edit a row whose cells are still encrypted (not decrypted yet),
     // writing now would overwrite the ciphertext and lose the other cells.
     if (get().rows[rowId]?.cellsEnc) return;
@@ -4999,6 +5031,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   setRowContent: (rowId, content) => {
+    if (viewerOnly(get().rows[rowId]?.workspace ?? get().tables[get().rows[rowId]?.table ?? '']?.workspace)) return;
     // Refuse a row whose body is still ciphertext we haven't opened. The row-detail
     // editor mounts with a null doc and reports an empty document on mount, so
     // without this the first render of an undecrypted card would save that emptiness

@@ -22,11 +22,13 @@ export default async function () {
       async () => {
         const invitee = `new-${Date.now()}@example.org`;
         pb.smtp.clear();
-        await api.must(api.create('workspace_invites', { workspace: ws.id, email: invitee, role: 'editor', invitedBy: alice.id, status: 'pending' }, alice.token), 'invite');
+        const token = api.inviteToken();
+        await api.must(api.create('workspace_invites', { workspace: ws.id, email: invitee, role: 'editor', invitedBy: alice.id, status: 'pending', token }, alice.token), 'invite');
         await settle();
         const mail = pb.smtp.to(invitee);
         eq(mail.length, 1, 'mails to the invitee');
         const body = htmlPart(mail[0].data);
+        ok(body.includes(`t=${token}`), 'the invite link lacks its one-time secret, so an unverified invitee could not join');
         ok(body.includes('Trip &lt;b&gt;crew&lt;/b&gt; &amp; co'), 'workspace name not escaped in:\n' + body.slice(0, 600));
         ok(!body.includes('<b>crew</b>'), 'raw markup reached the HTML part of the email');
       });
@@ -91,15 +93,19 @@ export default async function () {
         ok(anon.status === 401 || anon.status === 403, `previews without an account: ${anon.status}`);
       });
 
-    await check('signing up with an invited address joins that workspace with the invited role',
-      'This is how invited people arrive; if it breaks they sign up into an empty app and the inviter thinks they never came.',
+    await check('signing up through the invite link joins that workspace with the invited role, and only then',
+      'This is how invited people arrive; if it breaks they sign up into an empty app. Signing up with the address alone must not be enough, or anyone could take the seat first.',
       async () => {
         const email = `joiner-${Date.now()}@example.org`;
-        await api.must(api.create('workspace_invites', { workspace: ws.id, email, role: 'viewer', invitedBy: alice.id, status: 'pending' }, alice.token), 'invite');
+        const token = api.inviteToken();
+        await api.must(api.create('workspace_invites', { workspace: ws.id, email, role: 'viewer', invitedBy: alice.id, status: 'pending', token }, alice.token), 'invite');
         await api.must(api.create('users', { email, password: 'Passw0rd!2345', passwordConfirm: 'Passw0rd!2345', name: 'Joiner' }), 'sign up');
         const auth = await api.must(api.call('POST', '/api/collections/users/auth-with-password', { identity: email, password: 'Passw0rd!2345' }), 'sign in');
+        const before = await api.list('workspace_members', auth.token, `&filter=${encodeURIComponent(`user="${auth.record.id}"`)}`);
+        eq(before.length, 0, 'memberships after signing up without the link');
+        await api.must(api.call('POST', '/api/waypoint/invites/claim', { token }, auth.token), 'open the link');
         const seats = await api.list('workspace_members', auth.token, `&filter=${encodeURIComponent(`user="${auth.record.id}"`)}`);
-        eq(seats.map((m) => [m.workspace, m.role]), [[ws.id, 'viewer']], 'memberships after sign-up');
+        eq(seats.map((m) => [m.workspace, m.role]), [[ws.id, 'viewer']], 'memberships after using the link');
       });
   } finally {
     await pb.stop();

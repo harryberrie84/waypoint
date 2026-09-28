@@ -714,8 +714,9 @@ export const workspaceInvitesApi = {
     const records = await pb.collection('workspace_invites').getFullList({ sort: '-created' });
     return records.map(toWorkspaceInvite);
   },
-  async create(workspace: string, email: string, role: WorkspaceRole): Promise<WorkspaceInvite> {
+  async create(workspace: string, email: string, role: WorkspaceRole, token: string): Promise<WorkspaceInvite> {
     const rec = await pb.collection('workspace_invites').create({
+      token,
       workspace,
       // Lowercase so the claim-on-signin hook matches the registered email exactly.
       email: normalizeEmail(email),
@@ -727,6 +728,10 @@ export const workspaceInvitesApi = {
   },
   async remove(id: string): Promise<void> {
     await pb.collection('workspace_invites').delete(id);
+  },
+  async claim(token: string): Promise<{ workspaces: string[]; reason: string }> {
+    const r = (await pb.send('/api/waypoint/invites/claim', { method: 'POST', body: token ? { token } : {} })) as { workspaces?: string[]; reason?: string };
+    return { workspaces: Array.isArray(r?.workspaces) ? r.workspaces : [], reason: typeof r?.reason === 'string' ? r.reason : '' };
   },
 };
 

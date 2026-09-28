@@ -63,9 +63,9 @@ export async function startApp(options = {}) {
 }
 
 let counter = 0;
-export async function registerInUi(page, url, name, givenEmail) {
+export async function registerInUi(page, url, name, givenEmail, startPath = '/') {
   const email = givenEmail || `${name}-${Date.now().toString(36)}${(counter++).toString(36)}@example.org`;
-  await page.goto(url + '/');
+  await page.goto(url + startPath);
   await page.getByRole('button', { name: 'Create account' }).first().click();
   await page.getByPlaceholder('Alex Rivera').fill(name);
   await page.getByPlaceholder('you@example.com').fill(email);

@@ -94,6 +94,7 @@ const ADD_FIELDS = {
 ADD_FIELDS.pages.push(bool('trashed'));
 ADD_FIELDS.tables.push(json('views'), json('automations'));
 ADD_FIELDS.workspaces = [text('numberStyle', 20)];
+ADD_FIELDS.workspace_invites = [text('tokenHash', 128)];
 
 const idx = (col, field) => `CREATE INDEX \`idx_${col}_${field}\` ON \`${col}\` (\`${field}\`)`;
 const ADD_INDEXES = {
@@ -148,7 +149,17 @@ const NEW_COLLECTIONS = [
   },
 ];
 
-const MEMBER_OF_NEW_WS = '@request.data.workspace.workspace_members_via_workspace.user ?= @request.auth.id';
+const OLD_MEMBER_OF_NEW_WS = '@request.data.workspace.workspace_members_via_workspace.user ?= @request.auth.id';
+const WRITER = (alias, of) =>
+  `(@collection.workspace_members:${alias}.workspace ?= ${of} && @collection.workspace_members:${alias}.user ?= @request.auth.id && ` +
+  `@collection.workspace_members:${alias}.role ?!= "viewer")`;
+const MEMBER_OF_NEW_WS = WRITER('nwm', '@request.data.workspace');
+const CAN_WRITE = WRITER('wm', 'workspace');
+const CAN_WRITE_PAGE = WRITER('wpm', 'page.workspace');
+const NOT_PAGE_VIEWER = '(owner = @request.auth.id || editors:each ?= @request.auth.id || viewers:length = 0 || viewers.id != @request.auth.id)';
+const OLD_NOT_PAGE_VIEWER = '(owner = @request.auth.id || editors:each ?= @request.auth.id || viewers.id != @request.auth.id)';
+const READER = `${AUTHED} && workspace != "" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id`;
+const WRITER_SCOPED = `${AUTHED} && workspace != "" && ${CAN_WRITE}`;
 const ADMIN_OF_ROW =
   '(workspace.owner = @request.auth.id || (@collection.workspace_members:adm.workspace ?= workspace && ' +
   '@collection.workspace_members:adm.user ?= @request.auth.id && @collection.workspace_members:adm.role ?= "admin"))';
@@ -156,20 +167,22 @@ const TEXT_WS_MEMBER =
   'workspace != "" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id';
 const RULES = {
   pages: {
-    createRule: `${AUTHED} && ${MEMBER}`,
+    createRule: `${AUTHED} && ${CAN_WRITE}`,
     updateRule: null,
   },
   tables: {
-    createRule: `${AUTHED} && ${MEMBER}`,
-    updateRule: `${AUTHED} && ${MEMBER} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`,
+    createRule: `${AUTHED} && ${CAN_WRITE}`,
+    updateRule: `${AUTHED} && ${CAN_WRITE} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`,
+    deleteRule: `${AUTHED} && ${CAN_WRITE}`,
   },
   table_rows: {
-    createRule: `${AUTHED} && ${MEMBER}`,
-    updateRule: `${AUTHED} && ${MEMBER} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`,
+    createRule: `${AUTHED} && ${CAN_WRITE}`,
+    updateRule: `${AUTHED} && ${CAN_WRITE} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`,
+    deleteRule: `${AUTHED} && ${CAN_WRITE}`,
   },
   comments: {
-    createRule: `${AUTHED} && author = @request.auth.id && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id`,
-    updateRule: 'author = @request.auth.id && @request.data.page:isset = false && @request.data.author:isset = false',
+    createRule: `${AUTHED} && author = @request.auth.id && ${CAN_WRITE_PAGE}`,
+    updateRule: `author = @request.auth.id && @request.data.page:isset = false && @request.data.author:isset = false && ${CAN_WRITE_PAGE}`,
   },
   presence: {
     createRule: `${AUTHED} && user = @request.auth.id && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id`,
@@ -178,10 +191,7 @@ const RULES = {
       '(@request.data.page:isset = false || @request.data.page.workspace.workspace_members_via_workspace.user ?= @request.auth.id)',
   },
   workspace_members: {
-    createRule:
-      `${AUTHED} && @request.data.user = @request.auth.id && (@request.data.workspace.owner ?= @request.auth.id || ` +
-      '(@collection.workspace_invites.workspace ?= @request.data.workspace && @collection.workspace_invites.email ?= @request.auth.email && ' +
-      '@collection.workspace_invites.status ?= "pending" && @collection.workspace_invites.role ?= @request.data.role))',
+    createRule: `${AUTHED} && @request.data.user = @request.auth.id && @request.data.workspace.owner ?= @request.auth.id`,
     updateRule:
       `${AUTHED} && @request.data.workspace:isset = false && @request.data.user:isset = false && ` +
       '(@request.data.publicKey:isset = false || user = @request.auth.id) && ' +
@@ -192,12 +202,14 @@ const RULES = {
     updateRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW}) && @request.data.workspace:isset = false`,
     deleteRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW})`,
   },
-  yupdates: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
-  page_versions: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
-  reminders: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
-  file_trash: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
+  yupdates: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
+  page_versions: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
+  reminders: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, updateRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
+  file_trash: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, updateRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
   uploads: {
-    createRule: `${AUTHED} && (workspace = "" || (@collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id))`,
+    listRule: READER,
+    createRule: `${AUTHED} && (workspace = "" || ${CAN_WRITE})`,
+    deleteRule: WRITER_SCOPED,
   },
 };
 
@@ -248,8 +260,16 @@ for (const col of all) {
   for (const k of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule']) {
     if (typeof r[k] === 'string') col[k] = r[k];
   }
+  for (const k of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule']) {
+    if (typeof col[k] === 'string') col[k] = col[k].split(OLD_MEMBER_OF_NEW_WS).join(MEMBER_OF_NEW_WS).split(OLD_NOT_PAGE_VIEWER).join(NOT_PAGE_VIEWER);
+  }
   if (col.name === 'pages' && !String(col.updateRule).includes('@request.data.workspace:isset')) {
     col.updateRule = `${col.updateRule} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`;
+  }
+  if (col.name === 'pages') {
+    for (const k of ['updateRule', 'deleteRule']) {
+      if (typeof col[k] === 'string' && !col[k].includes(CAN_WRITE)) col[k] = `${col[k]} && ${CAN_WRITE} && ${NOT_PAGE_VIEWER}`;
+    }
   }
   if (FASTER.includes(col.name)) {
     for (const k of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule']) col[k] = faster(col[k]);

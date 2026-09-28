@@ -101,7 +101,9 @@ export function PageView({ pageId }: { pageId: string }) {
   const clearPendingPageTab = useData((s) => s.clearPendingPageTab);
   const myId = useAuth((s) => s.user?.id ?? null);
   const role = useData((s) => selectMyRole(s.pages, pageId, myId));
-  const editable = canEdit(role);
+  const pageWorkspace = useData((s) => (pageId ? s.pages[pageId]?.workspace : undefined));
+  const workspaceViewer = useWorkspace((s) => s.myRole(pageWorkspace) === 'viewer');
+  const editable = canEdit(role) && !workspaceViewer;
 
   const vaultStatus = useVault((s) => s.status);
   const vaultReady = useVault((s) => s.ready);

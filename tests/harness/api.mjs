@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 export function client(base) {
   const call = async (method, path, body, token, { form } = {}) => {
     for (let attempt = 0; ; attempt++) {
@@ -59,11 +60,14 @@ export function client(base) {
       const member = await api.must(api.create('workspace_members', { workspace: ws.id, user: owner.id, userName: owner.name, role: 'admin' }, owner.token), 'seat owner');
       return { ...ws, ownerMember: member };
     },
+    inviteToken: () => randomBytes(32).toString('base64url'),
     invite: async (owner, ws, user, role = 'editor') => {
-      await api.must(api.create('workspace_invites', { workspace: ws.id, email: user.email, role, invitedBy: owner.id, status: 'pending' }, owner.token), 'invite');
+      const token = api.inviteToken();
+      await api.must(api.create('workspace_invites', { workspace: ws.id, email: user.email, role, invitedBy: owner.id, status: 'pending', token }, owner.token), 'invite');
+      await api.must(api.call('POST', '/api/waypoint/invites/claim', { token }, user.token), 'accept invite');
       const seated = (await api.list('workspace_members', user.token, `&filter=${encodeURIComponent(`workspace="${ws.id}" && user="${user.id}"`)}`))[0];
-      if (seated) return seated;
-      return api.must(api.create('workspace_members', { workspace: ws.id, user: user.id, userName: user.name, role }, user.token), 'accept invite');
+      if (!seated) throw new Error(`accept invite: ${user.name} was not seated in ${ws.name}`);
+      return seated;
     },
   };
   return api;

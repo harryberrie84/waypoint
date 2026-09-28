@@ -10,6 +10,9 @@
 //     claim it immediately (covers "invited an existing teammate") so they don't
 //     have to log out and back in to see the workspace.
 // In all cases we create a workspace_members row and mark the invite accepted.
+// Only for an account whose email address is VERIFIED: otherwise anyone could
+// register the invited address first and take the seat. Unverified accounts join
+// through the invite link instead (invite_claim.pb.js).
 // That's why invites are by email and there's no user directory to browse.
 //
 // Matching is case-insensitive in JS, not via a PB filter: PocketBase's filter
@@ -82,6 +85,7 @@ onRecordAfterCreateRequest(function (e) {
   }
 
   function claimInvitesFor(user) {
+    if (!user || !user.verified()) return;
     var email = emailOf(user);
     if (!email) return;
 
@@ -152,6 +156,7 @@ onRecordAuthRequest(function (e) {
   }
 
   function claimInvitesFor(user) {
+    if (!user || !user.verified()) return;
     var email = emailOf(user);
     if (!email) return;
 
@@ -183,7 +188,7 @@ onRecordAfterCreateRequest(function (e) {
   } catch (_) {
     user = null; // not registered yet, nothing to claim
   }
-  if (user) acceptInvite(e.record, user, email);
+  if (user && user.verified()) acceptInvite(e.record, user, email);
 
   function acceptInvite(inv, u, mail) {
     var wsId = inv.get("workspace");

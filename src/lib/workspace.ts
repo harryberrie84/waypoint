@@ -76,7 +76,7 @@ export function normalizeEmail(raw: string): string {
 // The email link from invite_email.pb.js lands here; we prefill the form so the
 // invitee registers/signs in with the exact address the invite was sent to,
 // which is what lets the server hook claim it. `ws` is display-only.
-export function readInviteFromSearch(search: string): { email: string; workspace: string } | null {
+export function readInviteFromSearch(search: string): { email: string; workspace: string; token: string } | null {
   let params: URLSearchParams;
   try {
     params = new URLSearchParams(search || '');
@@ -85,7 +85,7 @@ export function readInviteFromSearch(search: string): { email: string; workspace
   }
   const email = (params.get('invite') || '').trim();
   if (!email || !email.includes('@')) return null;
-  return { email, workspace: (params.get('ws') || '').trim() };
+  return { email, workspace: (params.get('ws') || '').trim(), token: (params.get('t') || '').trim() };
 }
 
 export type InviteCheck = { ok: true; email: string } | { ok: false; reason: string };

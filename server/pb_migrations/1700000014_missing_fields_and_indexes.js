@@ -11,6 +11,7 @@ migrate(
         { name: "automations", type: "json", required: false, options: { maxSize: 2000000 } },
       ],
       workspaces: [{ name: "numberStyle", type: "text", required: false, options: { min: null, max: 20, pattern: "" } }],
+      workspace_invites: [{ name: "tokenHash", type: "text", required: false, options: { min: null, max: 128, pattern: "" } }],
     };
     var INDEXES = {
       pages: ["workspace", "parent", "updated"],

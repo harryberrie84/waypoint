@@ -6,7 +6,8 @@
 // who); this hook does the rest. The email carries a deep link back to the app
 // with the invited address baked in (`/?invite=<email>`), so the auth screen
 // prefills it and the invitee signs up with the exact email the invite was sent
-// to, which is what claim_invites.pb.js needs to turn it into a membership.
+// to. The link also carries the invite's one-time secret (`t`), which is what
+// invite_claim.pb.js checks before seating an account that is not verified.
 //
 // Without this hook the invitee gets nothing and has to be told out-of-band to
 // register with the right address. Pairs with claim_invites.pb.js (membership)
@@ -62,8 +63,11 @@ onRecordAfterCreateRequest(function (e) {
   var role = inv.get("role") || "editor";
   var roleBlurb = ROLE_BLURB[role] || ROLE_BLURB.editor;
 
+  var info = $apis.requestInfo(e.httpContext);
+  var token = info && info.data && typeof info.data.token === "string" ? info.data.token : "";
   var link = appUrl
-    ? appUrl + "/?invite=" + encodeURIComponent(email) + "&ws=" + encodeURIComponent(wsName)
+    ? appUrl + "/?invite=" + encodeURIComponent(email) + "&ws=" + encodeURIComponent(wsName) +
+      (token ? "&t=" + encodeURIComponent(token) : "")
     : "";
 
   var button = link

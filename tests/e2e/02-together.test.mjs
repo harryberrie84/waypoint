@@ -4,7 +4,7 @@ import { suite, check, eq } from '../harness/runner.mjs';
 
 const SETUPS = [
   { label: 'every hook, as the Docker image runs', options: {} },
-  { label: 'only the invite email hook, as live runs', options: { onlyHooks: ['invite_email.pb.js'] } },
+  { label: 'only the invite hooks, as live runs', options: { onlyHooks: ['invite_email.pb.js', 'invite_claim.pb.js'] } },
 ];
 
 export default async function () {
@@ -25,12 +25,24 @@ async function run({ label, options }) {
     const ws = (await api.list('workspaces', auth.token))[0];
     const memberEmail = `member-${Date.now()}@example.org`;
 
-    await check('an invited person signs up and lands in the workspace with its pages',
-      'Joining is how a crew forms. Live has no server hook for it, so the app itself must claim the invite.',
+    await check('an invited person who opens the invite link and signs up lands in the workspace with its pages',
+      'Joining is how a crew forms. The link carries the invite’s one-time secret, which is what lets a brand-new, unverified account in.',
       async () => {
-        await api.must(api.create('workspace_invites', { workspace: ws.id, email: memberEmail, role: 'editor', invitedBy: auth.record.id, status: 'pending' }, auth.token), 'invite');
-        await registerInUi(b, url, 'member', memberEmail);
+        const token = api.inviteToken();
+        await api.must(api.create('workspace_invites', { workspace: ws.id, email: memberEmail, role: 'editor', invitedBy: auth.record.id, status: 'pending', token }, auth.token), 'invite');
+        await registerInUi(b, url, 'member', memberEmail, `/?invite=${encodeURIComponent(memberEmail)}&ws=Trip&t=${encodeURIComponent(token)}`);
         await waitFor(async () => (await sidebarText(b)).includes('Trip'), "the owner's Trip page in the member's sidebar", 15000);
+      });
+
+    await check('signing up with an invited address but without the link does not join',
+      'Anyone could otherwise register the invited address first and take the seat.',
+      async () => {
+        const c = await app.newPage('squatter');
+        const squatEmail = `squat-${Date.now()}@example.org`;
+        await api.must(api.create('workspace_invites', { workspace: ws.id, email: squatEmail, role: 'admin', invitedBy: auth.record.id, status: 'pending', token: api.inviteToken() }, auth.token), 'invite');
+        await registerInUi(c, url, 'squatter', squatEmail);
+        await c.waitForTimeout(3000);
+        eq((await sidebarText(c)).includes('Trip'), false, "the owner's Trip page is in the squatter's sidebar");
       });
 
     await sidebar(a).getByText('Trip', { exact: true }).first().click();
