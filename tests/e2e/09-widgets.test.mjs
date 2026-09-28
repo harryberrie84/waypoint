@@ -125,18 +125,32 @@ export default async function () {
         await settled(page, '.ProseMirror[contenteditable="true"]');
       });
 
-    await check('Budget adds both the expenses and the settle-up block',
-      'Inserting a budget used to drop the expenses table and keep only the settle-up block, so the page had nowhere to enter a cost.',
+    await check('Budget adds both the expenses and the settle-up block, where the command was typed',
+      'Inserting a budget used to drop the expenses table, and a widget that took a moment to create landed wherever the cursor had moved in the meantime, splitting someone else’s sentence.',
       async () => {
+        await page.route('**/api/collections/tables/records', async (route) => {
+          if (route.request().method() === 'POST') await new Promise((r) => setTimeout(r, 2000));
+          await route.continue();
+        });
         await insert(page, 'budget goes here', '/budget', 'Expenses, split');
+        const other = page.locator('.ProseMirror[contenteditable="true"] > p', { hasText: 'table goes here' }).first();
+        await other.click();
+        await page.keyboard.press('End');
+        await page.keyboard.type(' soon');
         await page.locator('[data-table-widget="budget"]').waitFor({ timeout: 15000 });
+        await page.unroute('**/api/collections/tables/records');
         await page.getByText('Settle up', { exact: true }).waitFor({ timeout: 10000 });
+        const order = await page.evaluate(() => [...document.querySelector('.ProseMirror[contenteditable="true"]').children].map((el) => el.getAttribute('data-table-widget') || (el.querySelector('[data-table-widget]')?.getAttribute('data-table-widget')) || (/Settle up/.test(el.textContent || '') ? 'settle' : '') || (el.tagName === 'P' ? `p:${el.textContent}` : el.tagName)));
+        const budgetAt = order.findIndex((x) => x === 'budget');
+        const lineAt = order.findIndex((x) => x === 'p:table goes here soon');
+        ok(budgetAt >= 0 && lineAt > budgetAt, `the budget should sit above the line that was typed into meanwhile, got ${JSON.stringify(order)}`);
+        eq(order[budgetAt + 1], 'settle', 'settle-up follows the expenses');
+        await insert(page, 'table goes here soon', '/table', 'Relational database');
       });
 
     await check('a table inserted as a table stays a table',
       'Someone who asked for a database wants the grid, not a list.',
       async () => {
-        await insert(page, 'table goes here', '/table', 'Relational database');
         await waitFor(async () => (await page.locator('.tiptap table').count()) > 0, 'a grid');
         eq(await page.locator('[data-table-widget]').count(), 2, 'widgets on the page (packing and budget only)');
       });
