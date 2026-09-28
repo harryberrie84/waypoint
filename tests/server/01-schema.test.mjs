@@ -57,7 +57,7 @@ export default async function () {
     const page = await api.must(api.create('pages', { title: 'p', workspace: ws.id, owner: owner.id }, owner.token), 'page');
     const table = await api.must(api.create('tables', { name: 't', workspace: ws.id, owner: owner.id }, owner.token), 'table');
     const row = await api.must(api.create('table_rows', { table: table.id, workspace: ws.id }, owner.token), 'row');
-    const comment = await api.must(api.create('comments', { page: page.id, author: owner.id, authorName: 'o', body: 'x' }, owner.token), 'comment');
+    const comment = await api.must(api.create('comments', { page: page.id, author: owner.id, authorName: owner.name, body: 'x' }, owner.token), 'comment');
     const presence = await api.must(api.create('presence', { page: page.id, user: owner.id, mode: 'viewing' }, owner.token), 'presence');
     const target = { pages: page, tables: table, table_rows: row, workspaces: ws, comments: comment, presence, users: { id: owner.id } };
 
@@ -70,6 +70,7 @@ export default async function () {
           const missing = fields.filter((f) => !defs.some((d) => d.name === f));
           eq(missing, [], `fields the app writes that ${coll} does not have`);
           for (const f of fields) body[f] = sample(defs.find((d) => d.name === f), owner);
+          if (coll === 'comments' && 'authorName' in body) body.authorName = owner.name;
           await api.must(api.update(coll, target[coll].id, body, owner.token), `save ${coll}`);
           const back = await api.must(api.get(coll, target[coll].id, owner.token), `read ${coll}`);
           for (const f of fields) eq(back[f], body[f], `${coll}.${f} read back`);

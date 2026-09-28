@@ -33,12 +33,21 @@ onRecordAfterCreateRequest((e) => {
   const pageId = record.get("page");
 
   let wsId = "";
+  let pageRec = null;
   try {
-    wsId = $app.dao().findRecordById("pages", pageId).getString("workspace");
+    pageRec = $app.dao().findRecordById("pages", pageId);
+    wsId = pageRec.getString("workspace");
   } catch (_) {
     return;
   }
   if (!wsId) return;
+  const listed = (field, uid) => {
+    const ids = pageRec.getStringSlice(field) || [];
+    for (let i = 0; i < ids.length; i++) if (String(ids[i]) === uid) return true;
+    return false;
+  };
+  const canReadPage = (uid) =>
+    pageRec.getString("visibility") !== "private" || pageRec.getString("owner") === uid || listed("editors", uid) || listed("viewers", uid);
   const isMember = (uid) => {
     try {
       $app.dao().findFirstRecordByFilter("workspace_members", "workspace = {:w} && user = {:u}", { w: wsId, u: uid });
@@ -54,7 +63,7 @@ onRecordAfterCreateRequest((e) => {
     const uid = String(rawId);
     if (!uid || seen[uid]) return;
     seen[uid] = true;
-    if (uid === record.getString("author") || !isMember(uid)) return;
+    if (uid === record.getString("author") || !isMember(uid) || !canReadPage(uid)) return;
 
     let user;
     try {

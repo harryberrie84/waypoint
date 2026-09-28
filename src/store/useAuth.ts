@@ -124,7 +124,13 @@ export const useAuth = create<AuthState>((set) => ({
   login: async (email, password) => {
     set({ busy: true, error: null });
     try {
-      await pb.collection('users').authWithPassword(email.trim(), password);
+      const typed = email.trim();
+      try {
+        await pb.collection('users').authWithPassword(typed, password);
+      } catch (first) {
+        if (typed === typed.toLowerCase()) throw first;
+        await pb.collection('users').authWithPassword(typed.toLowerCase(), password);
+      }
       const user = currentUser();
       set({ user, busy: false });
       // We have the password here, so unlock the vault transparently.

@@ -996,7 +996,7 @@ interface DataState {
   firePageCheckboxFlows: (pageId: string, oldDoc: unknown, newDoc: unknown) => void;
   trashPage: (id: string) => Promise<void>; // soft delete (recoverable)
   restorePage: (id: string) => Promise<void>; // bring back from trash
-  deletePage: (id: string) => Promise<void>; // permanent delete (from trash)
+  deletePage: (id: string, opts?: { quiet?: boolean }) => Promise<boolean>; // permanent delete (from trash)
   emptyTrash: () => Promise<void>; // permanently delete everything in the trash
   sweepOldTrash: (maxAgeDays: number) => Promise<number>; // purge trash older than N days; returns the count
   // Hard-delete every page/table/row stamped with a workspace, from the store and
@@ -3676,8 +3676,8 @@ export const useData = create<DataState>((set, get) => ({
     }
   },
 
-  deletePage: async (id) => {
-    if (viewerOnly(get().pages[id]?.workspace)) return;
+  deletePage: async (id, opts) => {
+    if (viewerOnly(get().pages[id]?.workspace, opts?.quiet)) return false;
     // Collect descendants client-side and delete deepest-first.
     const pages = get().pages;
     const toRemove: string[] = [];
@@ -3686,6 +3686,16 @@ export const useData = create<DataState>((set, get) => ({
       toRemove.push(pid);
     };
     collect(id);
+    const myId = (pb.authStore.record?.id as string) ?? '';
+    const ws = useWorkspace.getState();
+    const mayDelete = (rid: string) => {
+      const p = pages[rid];
+      return !p || p.owner === myId || ws.myRole(p.workspace || undefined) === 'admin';
+    };
+    if (!toRemove.every(mayDelete)) {
+      if (!opts?.quiet) toast('Only the person who made a page, or an admin, can delete it for good. It stays in the trash.', 'error');
+      return false;
+    }
 
     // Tables embedded in (or backing) the pages being permanently deleted, so we
     // can clean up the ones nothing else references once the pages are gone.
@@ -3712,24 +3722,26 @@ export const useData = create<DataState>((set, get) => ({
       return { pages: next, activePageId: active };
     });
 
-    // The pages are gone from the store now, so anything no longer referenced is
-    // an orphan, delete those tables and their rows.
-    get().gcOrphanTables(candidateTables);
-
     for (const rid of toRemove) {
       try {
         await pagesApi.remove(rid);
       } catch (err) {
         console.error('[data] deletePage failed for', rid, err);
         if (navigator.onLine) void get().hydrate();
-        break;
+        return false;
       }
     }
+    // Only once every page is gone on the server: anything no longer referenced
+    // is an orphan, so delete those tables and their rows.
+    get().gcOrphanTables(candidateTables);
+    return true;
   },
 
   emptyTrash: async () => {
     // Each root cascades to its trashed subtree, so deleting the roots clears all.
-    for (const root of selectTrashRoots(get().pages)) await get().deletePage(root.id);
+    let kept = 0;
+    for (const root of selectTrashRoots(get().pages)) if (!(await get().deletePage(root.id, { quiet: true }))) kept++;
+    if (kept) toast(`${kept} ${kept === 1 ? 'page belongs' : 'pages belong'} to someone else and stayed in the trash. Its owner or an admin can delete it.`, 'error');
   },
 
   sweepOldTrash: async (maxAgeDays) => {
@@ -3738,8 +3750,9 @@ export const useData = create<DataState>((set, get) => ({
       const t = new Date(p.updated).getTime();
       return Number.isFinite(t) && t < cutoff; // trashing updates the record, so `updated` is when it was trashed
     });
-    for (const p of stale) await get().deletePage(p.id);
-    return stale.length;
+    let removed = 0;
+    for (const p of stale) if (await get().deletePage(p.id, { quiet: true })) removed++;
+    return removed;
   },
 
   renamePage: (id, title) => {

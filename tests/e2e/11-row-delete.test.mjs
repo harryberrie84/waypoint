@@ -19,7 +19,7 @@ export default async function () {
     const other = await row({ cname: 'Other' }, '', 3);
     const content = { type: 'doc', content: [{ type: 'tableEmbed', attrs: { tableId: table.id } }] };
     const pg = await api.must(api.create('pages', { title: 'Plan', workspace: ws.id, owner: me.id, order: 0, parent: '', content }, me.token), 'page');
-    const note = await api.must(api.create('comments', { page: pg.id, row: flights.id, author: me.id, authorName: 'me', body: 'window seats', mentions: [] }, me.token), 'comment');
+    const note = await api.must(api.create('comments', { page: pg.id, row: flights.id, author: me.id, authorName: me.name, body: 'window seats', mentions: [] }, me.token), 'comment');
 
     const page = await app.newPage('me');
     await signInInUi(page, url, me.email);

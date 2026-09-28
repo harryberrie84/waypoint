@@ -39,6 +39,7 @@ export default async function () {
       'Mentions were never delivered (the hook read the list as bytes). Now that they are, a mention of an account outside the workspace must not become mail on request to anyone.',
       async () => {
         pb.smtp.clear();
+        await api.must(api.update('users', alice.id, { name: 'Alice <script>' }, alice.token), 'a name with markup in it');
         await api.must(api.create('comments', { page: page.id, author: alice.id, authorName: 'Alice <script>', body: 'look <img src=x onerror=alert(1)>', mentions: [bob.id, outsider.id, alice.id] }, alice.token), 'comment');
         await settle();
         eq(pb.smtp.messages.map((m) => m.to).flat().sort(), [bob.email], 'recipients');
@@ -91,6 +92,28 @@ export default async function () {
         ok(pub.status === 200 || pub.status === 204, `a public address was refused: ${pub.status} ${pub.text}`);
         const anon = await api.call('GET', `/link-preview?url=${encodeURIComponent('https://example.com/')}`);
         ok(anon.status === 401 || anon.status === 403, `previews without an account: ${anon.status}`);
+      });
+
+    await check('a mention on a private page does not email someone who cannot open it',
+      'The mention email carries the comment text; sending it to a member without access to the page leaked private content.',
+      async () => {
+        pb.smtp.clear();
+        const secret = await api.must(api.create('pages', { title: 'private', workspace: ws.id, owner: alice.id, visibility: 'private' }, alice.token), 'private page');
+        await api.must(api.create('comments', { page: secret.id, author: alice.id, authorName: 'Alice <script>', body: 'launch code 4321', mentions: [bob.id] }, alice.token), 'comment');
+        await settle();
+        eq(pb.smtp.to(bob.email).length, 0, 'mails to a member who cannot open the page');
+      });
+
+    await check('the password reset email links to the app, not to the admin dashboard',
+      'The reset link opened the server admin screen, which a normal user cannot use, so nobody could reset a forgotten password.',
+      async () => {
+        pb.smtp.clear();
+        await api.must(api.call('POST', '/api/collections/users/request-password-reset', { email: bob.email }), 'request reset');
+        await settle();
+        const mail = pb.smtp.to(bob.email);
+        eq(mail.length, 1, 'reset mails');
+        const raw = mail[0].data.replace(/=\r?\n/g, '');
+        ok(raw.includes('/?reset=') && !raw.includes('/_/#/auth/confirm-password-reset'), 'the reset link does not open the app: ' + raw.slice(0, 600));
       });
 
     await check('signing up through the invite link joins that workspace with the invited role, and only then',

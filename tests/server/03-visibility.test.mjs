@@ -70,7 +70,7 @@ export default async function () {
     const t1 = await api.must(api.create('tables', { name: 'T1', workspace: w1.id }, u.alice.token), 't1');
     await api.must(api.create('table_rows', { table: t1.id, workspace: w1.id, cells: {} }, u.alice.token), 'row');
     const shared = pages.find((p) => p.key === 'shared in W1');
-    await api.must(api.create('comments', { page: shared.id, author: u.alice.id, authorName: 'a', body: 'x' }, u.alice.token), 'comment');
+    await api.must(api.create('comments', { page: shared.id, author: u.alice.id, authorName: u.alice.name, body: 'x' }, u.alice.token), 'comment');
     await api.must(api.create('presence', { page: shared.id, user: u.alice.id, mode: 'viewing' }, u.alice.token), 'presence');
     await api.must(api.create('workspace_keys', { workspace: w1.id, user: u.alice.id, wrappedKey: 'k' }, u.alice.token), 'key');
 

@@ -26,8 +26,9 @@ const RULES_OUT = join(ROOT, 'server', 'pb_migrations', '1700000015_narrow_write
 // already exists, so they would fail on a duplicate name. The bootstrap marks
 // them applied instead. Sorted, so the generated file is byte-stable and the
 // drift gate stays meaningful.
+const RUN_ON_FRESH = ['1700000017_reset_link_to_app.js'];
 const LATER = readdirSync(join(ROOT, 'server', 'pb_migrations'))
-  .filter((f) => f.endsWith('.js') && f !== '1699999999_bootstrap.js')
+  .filter((f) => f.endsWith('.js') && f !== '1699999999_bootstrap.js' && !RUN_ON_FRESH.includes(f))
   .sort();
 const NL = String.fromCharCode(10);
 const LATER_JS = JSON.stringify(LATER, null, 4).split(NL).join(NL + '    ');
@@ -158,6 +159,21 @@ const CAN_WRITE = WRITER('wm', 'workspace');
 const CAN_WRITE_PAGE = WRITER('wpm', 'page.workspace');
 const NOT_PAGE_VIEWER = '(owner = @request.auth.id || editors:each ?= @request.auth.id || viewers:length = 0 || viewers.id != @request.auth.id)';
 const OLD_NOT_PAGE_VIEWER = '(owner = @request.auth.id || editors:each ?= @request.auth.id || viewers.id != @request.auth.id)';
+const A_ID = '@request.auth.id';
+const PAGE_READ = (a) =>
+  `@collection.pages:${a}.id ?= page && @collection.pages:${a}.workspace ?= workspace && (@collection.pages:${a}.visibility ?!= "private" || ` +
+  `@collection.pages:${a}.owner ?= ${A_ID} || @collection.pages:${a}.editors.id ?= ${A_ID} || @collection.pages:${a}.viewers.id ?= ${A_ID})`;
+const PAGE_WRITE = (a) =>
+  `@collection.pages:${a}.id ?= page && @collection.pages:${a}.workspace ?= workspace && (@collection.pages:${a}.owner ?= ${A_ID} || ` +
+  `@collection.pages:${a}.editors.id ?= ${A_ID} || (@collection.pages:${a}.visibility ?!= "private" && @collection.pages:${a}.viewers !~ ${A_ID}))`;
+const COMMENT_PAGE_READABLE = `(page.visibility != "private" || page.owner = ${A_ID} || page.editors.id ?= ${A_ID} || page.viewers.id ?= ${A_ID})`;
+const OWNER_ONLY_PAGE_FIELDS =
+  `(owner = ${A_ID} || (@request.data.owner:isset = false && @request.data.visibility:isset = false && ` +
+  '@request.data.publicToken:isset = false && @request.data.editors:isset = false && @request.data.viewers:isset = false))';
+const NOT_THE_OWNER_ROW = `(user != workspace.owner || ${A_ID} = workspace.owner)`;
+const PUBLIC_LINK = '(publicToken != "" && publicToken = @request.query.token && trashed != true)';
+const PUBLIC_LINK_V1 = '(publicToken != "" && publicToken = @request.query.token && visibility != "private" && trashed != true)';
+const OLD_PUBLIC_LINK = '(publicToken != "" && publicToken = @request.query.token)';
 const READER = `${AUTHED} && workspace != "" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id`;
 const WRITER_SCOPED = `${AUTHED} && workspace != "" && ${CAN_WRITE}`;
 const ADMIN_OF_ROW =
@@ -181,8 +197,14 @@ const RULES = {
     deleteRule: `${AUTHED} && ${CAN_WRITE}`,
   },
   comments: {
-    createRule: `${AUTHED} && author = @request.auth.id && ${CAN_WRITE_PAGE}`,
-    updateRule: `author = @request.auth.id && @request.data.page:isset = false && @request.data.author:isset = false && ${CAN_WRITE_PAGE}`,
+    listRule: `${AUTHED} && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id && ${COMMENT_PAGE_READABLE}`,
+    viewRule: `${AUTHED} && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id && ${COMMENT_PAGE_READABLE}`,
+    createRule:
+      `${AUTHED} && author = @request.auth.id && ${CAN_WRITE_PAGE} && ${COMMENT_PAGE_READABLE} && ` +
+      '(@request.data.authorName = @request.auth.name || @request.data.authorName = @request.auth.email)',
+    updateRule:
+      `author = @request.auth.id && @request.data.page:isset = false && @request.data.author:isset = false && ${CAN_WRITE_PAGE} && ` +
+      '(@request.data.authorName:isset = false || @request.data.authorName = @request.auth.name || @request.data.authorName = @request.auth.email)',
   },
   presence: {
     createRule: `${AUTHED} && user = @request.auth.id && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id`,
@@ -195,15 +217,25 @@ const RULES = {
     updateRule:
       `${AUTHED} && @request.data.workspace:isset = false && @request.data.user:isset = false && ` +
       '(@request.data.publicKey:isset = false || user = @request.auth.id) && ' +
-      `(${ADMIN_OF_ROW} || (user = @request.auth.id && @request.data.role:isset = false))`,
-    deleteRule: `${AUTHED} && (user = @request.auth.id || ${ADMIN_OF_ROW})`,
+      `(${ADMIN_OF_ROW} || (user = @request.auth.id && @request.data.role:isset = false)) && ${NOT_THE_OWNER_ROW}`,
+    deleteRule: `${AUTHED} && (user = @request.auth.id || ${ADMIN_OF_ROW}) && ${NOT_THE_OWNER_ROW}`,
   },
   workspace_keys: {
     updateRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW}) && @request.data.workspace:isset = false`,
     deleteRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW})`,
   },
-  yupdates: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
-  page_versions: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
+  yupdates: {
+    listRule: `${READER} && ${PAGE_READ('pg')}`,
+    viewRule: `${READER} && ${PAGE_READ('pg')}`,
+    createRule: `${WRITER_SCOPED} && ${PAGE_WRITE('pw')}`,
+    deleteRule: `${WRITER_SCOPED} && ${PAGE_WRITE('pw')}`,
+  },
+  page_versions: {
+    listRule: `${READER} && ${PAGE_READ('pg')}`,
+    viewRule: `${READER} && ${PAGE_READ('pg')}`,
+    createRule: `${WRITER_SCOPED} && ${PAGE_WRITE('pw')}`,
+    deleteRule: `${WRITER_SCOPED} && ${PAGE_WRITE('pw')}`,
+  },
   reminders: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, updateRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
   file_trash: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, updateRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
   uploads: {
@@ -270,6 +302,10 @@ for (const col of all) {
     for (const k of ['updateRule', 'deleteRule']) {
       if (typeof col[k] === 'string' && !col[k].includes(CAN_WRITE)) col[k] = `${col[k]} && ${CAN_WRITE} && ${NOT_PAGE_VIEWER}`;
     }
+    if (!col.updateRule.includes(OWNER_ONLY_PAGE_FIELDS)) col.updateRule = `${col.updateRule} && ${OWNER_ONLY_PAGE_FIELDS}`;
+    const HARD_DELETE = `(owner = ${A_ID} || ${ADMIN_OF_ROW})`;
+    if (!col.deleteRule.includes(HARD_DELETE)) col.deleteRule = `${col.deleteRule} && ${HARD_DELETE}`;
+    for (const k of ['listRule', 'viewRule']) col[k] = col[k].split(PUBLIC_LINK_V1).join(PUBLIC_LINK).split(OLD_PUBLIC_LINK).join(PUBLIC_LINK);
   }
   if (FASTER.includes(col.name)) {
     for (const k of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule']) col[k] = faster(col[k]);

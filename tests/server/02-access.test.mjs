@@ -166,6 +166,84 @@ async function run({ label, options }) {
         allowed(await api.update('pages', open.id, { title: 'y' }, colleague.token), 'editor edits a page nobody restricted');
       });
 
+    await check('a private page stays private in its edit log, backups and comments too',
+      'The page itself was hidden, but its Yjs edits, backups and comments were readable and deletable by every member, which gave away the full text of a private page.',
+      async () => {
+        const nosy = await api.signup('nosy');
+        await api.invite(owner, ws, nosy, 'editor');
+        const trusted = await api.signup('trusted');
+        await api.invite(owner, ws, trusted, 'editor');
+        const secret = await api.must(api.create('pages', { title: 'salary', workspace: ws.id, owner: owner.id, visibility: 'private', editors: [trusted.id] }, owner.token), 'private page');
+        const y = await api.must(api.create('yupdates', { page: secret.id, workspace: ws.id, data: 'AAAA' }, owner.token), 'owner edit');
+        const v = await api.must(api.create('page_versions', { page: secret.id, workspace: ws.id, content: '{"t":"salary"}' }, owner.token), 'backup');
+        const c = await api.must(api.create('comments', { page: secret.id, author: owner.id, authorName: owner.name, body: 'numbers' }, owner.token), 'comment');
+        ok(!(await api.list('yupdates', nosy.token)).some((x) => x.id === y.id), 'a member without access reads the private edit log');
+        ok(!(await api.list('page_versions', nosy.token)).some((x) => x.id === v.id), 'a member without access reads a private backup');
+        ok(!(await api.list('comments', nosy.token)).some((x) => x.id === c.id), 'a member without access reads a private comment');
+        refused(await api.create('yupdates', { page: secret.id, workspace: ws.id, data: 'AAAA' }, nosy.token), 'a member without access writes into the private page');
+        refused(await api.remove('page_versions', v.id, nosy.token), 'a member without access deletes a private backup');
+        refused(await api.create('comments', { page: secret.id, author: nosy.id, authorName: nosy.name, body: 'x' }, nosy.token), 'a member without access comments');
+        ok((await api.list('yupdates', trusted.token)).some((x) => x.id === y.id), 'a listed editor cannot read the edit log');
+        allowed(await api.create('yupdates', { page: secret.id, workspace: ws.id, data: 'AAAA' }, trusted.token), 'a listed editor types');
+      });
+
+    await check('edits for a page that no longer exists are refused',
+      'An offline tab could flush its queue after the page was deleted elsewhere, leaving edit rows with no page that backups and search then trip over.',
+      async () => {
+        refused(await api.create('yupdates', { page: 'gonegonegonegon', workspace: ws.id, data: 'AAAA' }, owner.token), 'edit for a missing page');
+        refused(await api.create('page_versions', { page: 'gonegonegonegon', workspace: ws.id, content: '{}' }, owner.token), 'backup for a missing page');
+        const other = await api.workspace(owner, 'Elsewhere');
+        refused(await api.create('yupdates', { page: page.id, workspace: other.id, data: 'AAAA' }, owner.token), 'edit claiming another workspace');
+      });
+
+    await check('only the owner of a page decides who sees it, and only the owner or an admin deletes it for good',
+      'Any editor could make someone else’s page private to themselves, publish it on a public link, or delete it permanently.',
+      async () => {
+        const ed = await api.signup('ed2');
+        await api.invite(owner, ws, ed, 'editor');
+        const theirs = await api.must(api.create('pages', { title: 'owner notes', workspace: ws.id, owner: owner.id, visibility: 'workspace' }, owner.token), 'page');
+        allowed(await api.update('pages', theirs.id, { title: 'edited by ed' }, ed.token), 'an editor edits the text');
+        allowed(await api.update('pages', theirs.id, { trashed: true }, ed.token), 'an editor moves it to the trash');
+        allowed(await api.update('pages', theirs.id, { trashed: false }, ed.token), 'and back');
+        refused(await api.update('pages', theirs.id, { owner: ed.id }, ed.token), 'an editor takes ownership');
+        refused(await api.update('pages', theirs.id, { visibility: 'private' }, ed.token), 'an editor hides it');
+        refused(await api.update('pages', theirs.id, { publicToken: 'x'.repeat(24) }, ed.token), 'an editor publishes it');
+        refused(await api.update('pages', theirs.id, { viewers: [ed.id] }, ed.token), 'an editor changes who may see it');
+        refused(await api.remove('pages', theirs.id, ed.token), 'an editor deletes it for good');
+        allowed(await api.update('pages', theirs.id, { visibility: 'private' }, owner.token), 'the owner hides it');
+      });
+
+    await check('a public link stops working once the page is in the trash',
+      'Trashing a page left its public link readable by anyone who had it. (A private page with a link stays shared on purpose: sharing it is an explicit choice of its owner.)',
+      async () => {
+        const token = 'pub' + Date.now().toString(36) + 'xxxxxxxxxxxx';
+        const pubPage = await api.must(api.create('pages', { title: 'shared out', workspace: ws.id, owner: owner.id, visibility: 'workspace', publicToken: token }, owner.token), 'public page');
+        const anon = client(pb.url);
+        const seen = async () => (await anon.call('GET', `/api/collections/pages/records/${pubPage.id}?token=${token}`)).status;
+        ok((await seen()) === 200, 'the public link does not work while public');
+        await api.must(api.update('pages', pubPage.id, { trashed: true }, owner.token), 'trash it');
+        ok((await seen()) >= 400, 'a trashed page is still readable on its public link');
+      });
+
+    await check('nobody but the owner can demote or remove the owner of a workspace',
+      'An admin could remove the owner and lock them out of their own workspace.',
+      async () => {
+        const adm = await api.signup('adm');
+        await api.invite(owner, ws, adm, 'admin');
+        refused(await api.update('workspace_members', ws.ownerMember.id, { role: 'viewer' }, adm.token), 'admin demotes the owner');
+        refused(await api.remove('workspace_members', ws.ownerMember.id, adm.token), 'admin removes the owner');
+        const other = await api.signup('other2');
+        const m = await api.invite(owner, ws, other, 'editor');
+        allowed(await api.update('workspace_members', m.id, { role: 'viewer' }, adm.token), 'admin still manages everyone else');
+      });
+
+    await check('a comment cannot claim to be from someone else',
+      'The author name was free text, so a member could post as "The Owner" and ask colleagues for a password.',
+      async () => {
+        refused(await api.create('comments', { page: page.id, author: owner.id, authorName: 'Someone Else', body: 'x' }, owner.token), 'a comment under another name');
+        allowed(await api.create('comments', { page: page.id, author: owner.id, authorName: owner.name, body: 'x' }, owner.token), 'a comment under your own name');
+      });
+
     await check('records that belong to no workspace are readable by nobody',
       'Backups, Yjs edits and reminders with an empty workspace were readable and deletable by any signed-in account.',
       async () => {
@@ -197,7 +275,7 @@ async function run({ label, options }) {
         allowed(await api.create('table_rows', { table: t.data.id, workspace: ws.id, cells: {} }, member.token), 'member adds a row');
         allowed(await api.create('yupdates', { page: page.id, workspace: ws.id, data: 'AAAA' }, member.token), 'member types (Yjs update)');
         allowed(await api.create('page_versions', { page: page.id, workspace: ws.id, content: '{}' }, member.token), 'page backup');
-        allowed(await api.create('comments', { page: page.id, author: member.id, authorName: 'M', body: 'hi' }, member.token), 'member comments');
+        allowed(await api.create('comments', { page: page.id, author: member.id, authorName: member.name, body: 'hi' }, member.token), 'member comments');
         const pres = await api.create('presence', { page: page.id, user: member.id, mode: 'viewing' }, member.token);
         allowed(pres, 'presence on a page');
         allowed(await api.update('presence', pres.data.id, { page: page.id, user: member.id, mode: 'editing', heartbeat: new Date().toISOString() }, member.token), 'presence heartbeat');
