@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA = join(ROOT, 'pocketbase', 'schema.json');
 const OUT = join(ROOT, 'server', 'pb_migrations', '1699999999_bootstrap.js');
+const RULES_OUT = join(ROOT, 'server', 'pb_migrations', '1700000015_narrow_write_rules.js');
 
 // The incremental migrations that sit beside the bootstrap. They exist for
 // installs older than it, and on a FRESH database every collection they create
@@ -154,6 +155,85 @@ const NEW_COLLECTIONS = [
   },
 ];
 
+// --- who may write where ------------------------------------------------------
+// Probed on a PocketBase 0.22 with the rules as they were: a viewer could make
+// themselves admin and delete the owner's membership; anyone could move their own
+// membership row into a workspace whose id they knew (workspace ids are public
+// on every uploaded image) and then read all of it; anyone signed in could create
+// pages, tables, rows, comments, presence, Yjs updates and trash entries in a
+// workspace they are not in. Every rule below is NARROWER than the one it
+// replaces, and 1700000015 applies the same text to an existing install.
+//
+// A record's own fields (workspace, page) in a create rule are the values being
+// created. `@request.data.x:isset = false` refuses a field the request must not
+// change; a move to another workspace is still allowed where the mover is a
+// member of both.
+const MEMBER_OF_NEW_WS = '@request.data.workspace.workspace_members_via_workspace.user ?= @request.auth.id';
+const ADMIN_OF_ROW =
+  '(workspace.owner = @request.auth.id || (@collection.workspace_members:adm.workspace ?= workspace && ' +
+  '@collection.workspace_members:adm.user ?= @request.auth.id && @collection.workspace_members:adm.role ?= "admin"))';
+const TEXT_WS_MEMBER =
+  'workspace != "" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id';
+const RULES = {
+  pages: {
+    createRule: `${AUTHED} && ${MEMBER}`,
+    updateRule: null, // extended below, keeping the existing visibility clause
+  },
+  tables: {
+    createRule: `${AUTHED} && ${MEMBER}`,
+    updateRule: `${AUTHED} && ${MEMBER} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`,
+  },
+  table_rows: {
+    createRule: `${AUTHED} && ${MEMBER}`,
+    updateRule: `${AUTHED} && ${MEMBER} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`,
+  },
+  comments: {
+    createRule: `${AUTHED} && author = @request.auth.id && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id`,
+    updateRule: 'author = @request.auth.id && @request.data.page:isset = false && @request.data.author:isset = false',
+  },
+  presence: {
+    createRule: `${AUTHED} && user = @request.auth.id && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id`,
+    updateRule:
+      // The heartbeat resends `user`, so it may name the sender, never anyone else.
+      'user = @request.auth.id && (@request.data.user:isset = false || @request.data.user = @request.auth.id) && ' +
+      '(@request.data.page:isset = false || @request.data.page.workspace.workspace_members_via_workspace.user ?= @request.auth.id)',
+  },
+  workspace_members: {
+    // Unchanged except that an invite now grants the role it was sent with, not
+    // whatever role the joiner asks for.
+    createRule:
+      `${AUTHED} && @request.data.user = @request.auth.id && (@request.data.workspace.owner ?= @request.auth.id || ` +
+      '(@collection.workspace_invites.workspace ?= @request.data.workspace && @collection.workspace_invites.email ?= @request.auth.email && ' +
+      '@collection.workspace_invites.status ?= "pending" && @collection.workspace_invites.role ?= @request.data.role))',
+    // Your own row: name and public key, never your role. Anyone else's row: only
+    // the owner or an admin, and never their public key. Nobody moves a row.
+    updateRule:
+      `${AUTHED} && @request.data.workspace:isset = false && @request.data.user:isset = false && ` +
+      '(@request.data.publicKey:isset = false || user = @request.auth.id) && ' +
+      `(${ADMIN_OF_ROW} || (user = @request.auth.id && @request.data.role:isset = false))`,
+    // Leave, or be removed by the owner or an admin.
+    deleteRule: `${AUTHED} && (user = @request.auth.id || ${ADMIN_OF_ROW})`,
+  },
+  workspace_keys: {
+    // Any member may still grant the key to a member (that is how keys spread);
+    // only your own wrapped key, or the owner or an admin, may change or delete one.
+    updateRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW}) && @request.data.workspace:isset = false`,
+    deleteRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW})`,
+  },
+  // Text workspace fields: a new row must name a workspace its writer is in. The
+  // read side keeps its `workspace = ""` escape so rows written before workspaces
+  // existed stay readable; nothing can create a new one.
+  yupdates: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
+  page_versions: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
+  reminders: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
+  file_trash: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
+  // An upload made before a workspace is chosen carries none, so that stays
+  // allowed; one that names a workspace must name the writer's own.
+  uploads: {
+    createRule: `${AUTHED} && (workspace = "" || (@collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id))`,
+  },
+};
+
 // --- build -------------------------------------------------------------------
 const base = JSON.parse(readFileSync(SCHEMA, 'utf8'));
 
@@ -185,6 +265,14 @@ for (const col of kept) {
 const have = new Set(kept.map((c) => c.name));
 const all = [...kept, ...NEW_COLLECTIONS.filter((c) => !have.has(c.name))];
 for (const col of all) {
+  const r = RULES[col.name] || {};
+  for (const k of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule']) {
+    if (typeof r[k] === 'string') col[k] = r[k];
+  }
+  // pages keeps its visibility clause and only gains the move check.
+  if (col.name === 'pages' && !String(col.updateRule).includes('@request.data.workspace:isset')) {
+    col.updateRule = `${col.updateRule} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`;
+  }
   for (const i of ADD_INDEXES[col.name] || []) {
     if (!col.indexes.includes(i)) col.indexes.push(i);
   }
@@ -303,12 +391,67 @@ migrate(
 );
 `;
 
+// The same narrowed rules for an install that already exists, written from the
+// schema above so the two cannot say different things.
+const RULE_KEYS = ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule'];
+const narrowed = {};
+for (const col of all) {
+  if (!RULES[col.name]) continue;
+  narrowed[col.name] = {};
+  for (const k of RULE_KEYS) narrowed[col.name][k] = col[k] === undefined ? null : col[k];
+}
+const rulesMigration = `/// <reference path="../pb_data/types.d.ts" />
+//
+// 1700000015_narrow_write_rules.js, who may write where, for an existing install.
+//
+// GENERATED by scripts/gen-schema.mjs (the RULES block explains each rule). Do not
+// edit by hand.
+//
+// Probed on PocketBase 0.22 with the old rules: a viewer could make themselves
+// admin and remove the owner; anyone could move their own membership row into a
+// workspace whose id they knew and read all of it; anyone signed in could create
+// pages, tables, rows, comments, presence, Yjs updates and trash entries in a
+// workspace they are not in. Every rule here is narrower than the one it replaces.
+//
+// Down does nothing on purpose: putting those rules back reopens the holes.
+
+migrate(
+  function (db) {
+    var dao = new Dao(db);
+    var rules = ${JSON.stringify(narrowed, null, 4).split('\n').join('\n    ')};
+    Object.keys(rules).forEach(function (name) {
+      var col;
+      try {
+        col = dao.findCollectionByNameOrId(name);
+      } catch (e) {
+        return; // not on this install
+      }
+      var r = rules[name];
+      col.listRule = r.listRule;
+      col.viewRule = r.viewRule;
+      col.createRule = r.createRule;
+      col.updateRule = r.updateRule;
+      col.deleteRule = r.deleteRule;
+      dao.saveCollection(col);
+    });
+  },
+  function (db) {},
+);
+`;
+
 if (CHECK) {
   const curSchema = readFileSync(SCHEMA, 'utf8');
   const curMig = readFileSync(OUT, 'utf8');
   const drift = [];
   if (curSchema !== canonical) drift.push('pocketbase/schema.json');
   if (curMig !== migration) drift.push('server/pb_migrations/1699999999_bootstrap.js');
+  let curRules = '';
+  try {
+    curRules = readFileSync(RULES_OUT, 'utf8');
+  } catch {
+    /* missing counts as drift */
+  }
+  if (curRules !== rulesMigration) drift.push('server/pb_migrations/1700000015_narrow_write_rules.js');
   if (drift.length) {
     console.error('schema drift in: ' + drift.join(', '));
     console.error('run `npm run schema:gen` and commit the result');
@@ -318,5 +461,6 @@ if (CHECK) {
 } else {
   writeFileSync(SCHEMA, canonical);
   writeFileSync(OUT, migration);
+  writeFileSync(RULES_OUT, rulesMigration);
   console.log(`wrote pocketbase/schema.json and the bootstrap migration (${all.length} collections)`);
 }
