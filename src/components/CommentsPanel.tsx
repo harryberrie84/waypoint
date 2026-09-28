@@ -123,7 +123,10 @@ export function CommentsPanel({ pageId, rowId, onClose }: { pageId: string; rowI
         });
       })
       .then((fn) => {
-        unsub = fn;
+        // Torn down before the subscription landed: drop it now, or it outlives
+        // the component and keeps firing for a page nobody has open.
+        if (cancelled) void fn();
+        else unsub = fn;
       })
       .catch(() => {});
 

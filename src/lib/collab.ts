@@ -354,6 +354,13 @@ export class PageCollab {
           },
           { filter: `page="${this.pageId}"` },
         );
+        // Destroyed while that round trip was in flight: destroy() found no
+        // subscription to drop, so drop it here or it stays open for good.
+        if (this.destroyed && this.unsub) {
+          const drop = this.unsub;
+          this.unsub = null;
+          void drop();
+        }
       }
       this.relayConnected = true;
       this.onSync?.();
