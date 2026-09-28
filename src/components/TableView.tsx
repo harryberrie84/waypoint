@@ -165,6 +165,7 @@ export function TableView({ tableId, embed, bare = false }: { tableId: string; e
 
   return (
     <div className={bare ? '' : 'overflow-hidden rounded-xl border border-paper-line bg-paper dark:border-coal-line dark:bg-coal-panel'} onContextMenu={onTableContextMenu}>
+      <fieldset disabled={embed ? !embed.editable : false} className="m-0 min-w-0 border-0 p-0">
       {!bare && (<>
       <div className="flex items-center gap-2 border-b border-paper-line px-3 py-2 dark:border-coal-line">
         <Tag className="h-4 w-4 text-clay" />
@@ -217,6 +218,7 @@ export function TableView({ tableId, embed, bare = false }: { tableId: string; e
       {view.type === 'timeline' && <TimelineView tableId={tableId} table={table} rows={rows} view={view} />}
       {view.type === 'map' && <MapView tableId={tableId} table={table} rows={rows} view={view} />}
       {view.type === 'route' && <RouteView tableId={tableId} table={table} rows={rows} view={view} />}
+      </fieldset>
 
       {ctxMenu && (
         <>

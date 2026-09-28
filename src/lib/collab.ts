@@ -272,7 +272,8 @@ export class PageCollab {
     // browser says it's offline (the online handler will sync later), so an offline
     // page becomes ready at once.
     if (navigator.onLine !== false) {
-      await Promise.race([this.syncRelay(), new Promise<void>((r) => setTimeout(r, RELAY_WAIT_MS))]);
+      if (this.localHasContent) void this.syncRelay();
+      else await Promise.race([this.syncRelay(), new Promise<void>((r) => setTimeout(r, RELAY_WAIT_MS))]);
     }
 
     // Seed ONLY when we reached the server AND it has never been seeded (no snapshot,
