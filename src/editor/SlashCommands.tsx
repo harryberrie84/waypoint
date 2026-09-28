@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core';
-import Suggestion from '@tiptap/suggestion';
+import Suggestion, { exitSuggestion } from '@tiptap/suggestion';
 import type { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion';
 import { ReactRenderer } from '@tiptap/react';
 import type { Editor, Range } from '@tiptap/core';
@@ -1058,7 +1058,9 @@ const CommandMenu = forwardRef(function CommandMenu(
         setSelected((s) => (s + 1) % props.items.length);
         return true;
       }
-      if (event.key === 'Enter') {
+      // With nothing to pick, Enter is a new line. Swallowing it left the empty
+      // menu stuck open and the cursor unable to leave the line.
+      if (event.key === 'Enter' && props.items.length > 0) {
         pick(selected);
         return true;
       }
@@ -1106,6 +1108,10 @@ const CommandMenu = forwardRef(function CommandMenu(
 function makeRenderer() {
   let component: ReactRenderer<MenuRef, SuggestionProps<CommandItem>> | null = null;
   let popup: HTMLDivElement | null = null;
+  // The menu is our own element, so the plugin's dismissOnOutsideClick never sees
+  // it. A click inside the editor moves the cursor off the "/" and closes it by
+  // itself; this covers clicks anywhere else on the page.
+  let offOutside: (() => void) | null = null;
 
   const place = (clientRect: (() => DOMRect | null) | null | undefined) => {
     if (!popup || !clientRect) return;
@@ -1139,6 +1145,14 @@ function makeRenderer() {
       popup.appendChild(component.element);
       document.body.appendChild(popup);
       place(props.clientRect);
+      const view = props.editor.view;
+      const onDown = (e: PointerEvent) => {
+        const t = e.target as Node | null;
+        if (!t || popup?.contains(t) || view.dom.contains(t)) return;
+        exitSuggestion(view);
+      };
+      document.addEventListener('pointerdown', onDown, true);
+      offOutside = () => document.removeEventListener('pointerdown', onDown, true);
     },
     onUpdate: (props: SuggestionProps<CommandItem>) => {
       component?.updateProps(props);
@@ -1149,6 +1163,8 @@ function makeRenderer() {
       return component?.ref?.onKeyDown(props) ?? false;
     },
     onExit: () => {
+      offOutside?.();
+      offOutside = null;
       popup?.remove();
       popup = null;
       component?.destroy();
@@ -1165,9 +1181,8 @@ export const SlashCommands = Extension.create({
       suggestion: {
         char: '/',
         startOfLine: false,
-        // Allow spaces so colon args can be natural phrases (/date:next friday,
-        // /convert:30000 jpy to sek). A space with no matching command shows the
-        // empty state, which closes on escape or backspace.
+        // Spaces are allowed so colon args can be natural phrases (/date:next friday,
+        // /convert:30000 jpy to sek), and only there: see `allow` below.
         allowSpaces: true,
         command: ({ editor, range, props }: { editor: Editor; range: Range; props: CommandItem }) => {
           props.run(editor, range);
@@ -1202,6 +1217,15 @@ export const SlashCommands = Extension.create({
           );
         },
         render: makeRenderer,
+        // A space before any colon means this "/" was prose ("yes / no"), not a
+        // command. Without this the menu followed the rest of the line saying
+        // "No matching blocks".
+        allow: ({ state, range }) => {
+          const query = state.doc.textBetween(range.from, range.to).slice(1);
+          const colon = query.indexOf(':');
+          const head = colon === -1 ? query : query.slice(0, colon);
+          return !/\s/.test(head);
+        },
       }),
     ];
   },
