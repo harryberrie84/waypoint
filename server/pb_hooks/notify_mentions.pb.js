@@ -16,20 +16,23 @@
 onRecordAfterCreateRequest((e) => {
   const record = e.record;
 
-  // mentions is a JSON field, usually an array of user ids, but be defensive.
-  let mentions = record.get("mentions");
-  if (typeof mentions === "string") {
-    try { mentions = JSON.parse(mentions); } catch (_) { mentions = []; }
-  }
-  if (!mentions || !mentions.length) return;
+  // mentions is a JSON field, an array of user ids. Read it with getString:
+  // record.get() hands a JSON field to the JSVM as raw bytes (an array of
+  // numbers), so it never looked like a string and every "id" was a byte.
+  let mentions = [];
+  try { mentions = JSON.parse(record.getString("mentions") || "[]"); } catch (_) { mentions = []; }
+  if (!Array.isArray(mentions) || !mentions.length) return;
+
+  // The comment text and author name go into an HTML email, so escape them.
+  const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
   const settings = $app.settings();
   const fromAddress = settings.meta.senderAddress;
   const fromName = settings.meta.senderName || "Waypoint";
   const appUrl = settings.meta.appUrl || "";
 
-  const author = record.get("authorName") || "Someone";
-  const body = String(record.get("body") || "").slice(0, 500);
+  const author = esc(record.getString("authorName") || "Someone");
+  const body = esc(record.getString("body").slice(0, 500));
   const pageId = record.get("page");
 
   // De-duplicate ids.

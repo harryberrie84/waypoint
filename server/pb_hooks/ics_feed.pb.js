@@ -27,8 +27,8 @@ routerAdd("GET", "/ics/table/:id", (c) => {
     return c.string(404, "table not found");
   }
 
-  const columns = asArray(table.get("columns"));
-  const view = asObject(table.get("views"));
+  const columns = asArray(table.getString("columns"));
+  const view = asObject(table.getString("views"));
   const cols = resolveColumns(columns, view);
   if (!cols.start) return calendar(table.get("name"), []); // nothing dated yet
 
@@ -41,7 +41,7 @@ routerAdd("GET", "/ics/table/:id", (c) => {
 
   const events = [];
   rows.forEach((row) => {
-    const cells = asObject(row.get("cells"));
+    const cells = asObject(row.getString("cells"));
     const sp = parseDate(cells[cols.start]);
     if (!sp) return;
     const ep = cols.end ? parseDate(cells[cols.end]) : null;
@@ -55,6 +55,9 @@ routerAdd("GET", "/ics/table/:id", (c) => {
   return c.string(200, body);
 
   // --- helpers ---------------------------------------------------------------
+  // JSON fields are read with getString and parsed here. record.get() hands a
+  // JSON field to the JSVM as raw bytes, which Array.isArray accepts, so the
+  // feed saw columns made of numbers and always came out empty.
 
   function asArray(v) {
     if (Array.isArray(v)) return v;

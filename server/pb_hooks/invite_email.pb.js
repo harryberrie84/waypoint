@@ -52,6 +52,15 @@ onRecordAfterCreateRequest(function (e) {
     }
   } catch (_) { /* keep the generic name */ }
 
+  // The workspace and inviter names are whatever the inviter typed, and they go
+  // into an HTML email to someone else, so escape them (and the address) there.
+  var esc = function (v) {
+    return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  };
+  var wsHtml = esc(wsName);
+  var inviterHtml = esc(inviter);
+  var emailHtml = esc(email);
+
   var role = inv.get("role") || "editor";
   var roleBlurb = ROLE_BLURB[role] || ROLE_BLURB.editor;
 
@@ -61,20 +70,20 @@ onRecordAfterCreateRequest(function (e) {
 
   var button = link
     ? '<p style="margin:20px 0">' +
-        '<a href="' + link + '" style="background:#e05a86;color:#fff;text-decoration:none;' +
+        '<a href="' + esc(link) + '" style="background:#e05a86;color:#fff;text-decoration:none;' +
         'padding:10px 18px;border-radius:8px;font-weight:600;display:inline-block">' +
-        'Join ' + wsName + '</a></p>' +
-        '<p style="color:#999;font-size:12px">or paste this into your browser:<br>' + link + '</p>'
-    : '<p>Open Waypoint and create an account (or sign in) with <strong>' + email + '</strong> to join.</p>';
+        'Join ' + wsHtml + '</a></p>' +
+        '<p style="color:#999;font-size:12px">or paste this into your browser:<br>' + esc(link) + '</p>'
+    : '<p>Open Waypoint and create an account (or sign in) with <strong>' + emailHtml + '</strong> to join.</p>';
 
   var message = new MailerMessage({
     from: { address: fromAddress, name: fromName },
     to: [{ address: email }],
     subject: inviter + " invited you to " + wsName + " on Waypoint",
     html:
-      '<p><strong>' + inviter + '</strong> invited you to <strong>' + wsName + '</strong> ' + roleBlurb + '.</p>' +
+      '<p><strong>' + inviterHtml + '</strong> invited you to <strong>' + wsHtml + '</strong> ' + roleBlurb + '.</p>' +
       button +
-      '<p style="color:#999;font-size:12px">Sign up with this exact email (' + email +
+      '<p style="color:#999;font-size:12px">Sign up with this exact email (' + emailHtml +
       ') so you land in the right workspace.</p>',
   });
 

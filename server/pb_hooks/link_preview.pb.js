@@ -101,12 +101,14 @@ routerAdd(
       }
       return "";
     }
+    // Backslashes doubled: in a string literal "\s" is just "s", which made the
+    // <title> fallback match only titles spelled entirely in the letter s.
     function attr(tag, name) {
-      const m = new RegExp(name + '\s*=\s*"([^"]*)"', "i").exec(tag) || new RegExp(name + "\s*=\s*'([^']*)'", "i").exec(tag);
+      const m = new RegExp(name + '\\s*=\\s*"([^"]*)"', "i").exec(tag) || new RegExp(name + "\\s*=\\s*'([^']*)'", "i").exec(tag);
       return m ? m[1] : "";
     }
     function tagText(html, name) {
-      const m = new RegExp("<" + name + "[^>]*>([\s\S]*?)</" + name + ">", "i").exec(html);
+      const m = new RegExp("<" + name + "[^>]*>([\\s\\S]*?)</" + name + ">", "i").exec(html);
       return m ? decode(m[1].replace(/\s+/g, " ").trim()) : "";
     }
     // A relative og:image is common. Resolve it against the page it came from,
