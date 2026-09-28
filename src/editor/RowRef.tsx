@@ -27,7 +27,7 @@ function RowRefView({ node }: NodeViewProps) {
     const textCol = table.columns.find((c) => c.type === 'text');
     const raw =
       (textCol && (row.cells[textCol.id] as string)) ||
-      (Object.values(row.cells).find((v) => v !== null && v !== '') as string) ||
+      (Object.entries(row.cells).find(([k, v]) => !k.includes('__') && typeof v === 'string' && v !== '')?.[1] as string) ||
       '';
     label = raw ? String(raw) : `Row ${shortId(rowId)}`;
   }

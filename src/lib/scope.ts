@@ -1,6 +1,6 @@
 import type { Column, CellValue, TableData, TableRow } from '../types';
 import { evaluateFormula, type FormulaValue } from './formula';
-import { cellText } from './tableQuery';
+import { cellText, applyQuery, type ViewConfig } from './tableQuery';
 import { parseLocaleNumber } from './number';
 
 // Pure formula-scope logic, lifted out of TableCell so libs (tripViews, the
@@ -35,6 +35,21 @@ function dateTimeToDays(v: CellValue): number {
   return dayIdx + mins / 1440;
 }
 
+export const OWN_FORMULA_SUFFIX = '__fx';
+
+export function ownFormulaKey(columnId: string): string {
+  return columnId + OWN_FORMULA_SUFFIX;
+}
+
+export function ownFormula(column: Column, cells: Record<string, CellValue> | undefined): string | null {
+  const v = cells?.[ownFormulaKey(column.id)];
+  return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
+export function formulaFor(column: Column, cells: Record<string, CellValue> | undefined): string {
+  return ownFormula(column, cells) ?? column.formula ?? '';
+}
+
 /** column name -> value, for evaluating a row's formula columns. Numbers/dates
  *  become day-indices or counts; text/select/place become strings so concat()
  *  and format() can build labels. */
@@ -53,11 +68,11 @@ export function buildScope(columns: Column[], cells: Record<string, CellValue>):
   // Pass 2: formulas. Repeat until stable so a formula can reference another
   // formula regardless of column order (bounded by the count, so a cycle just
   // settles instead of looping forever).
-  const formulaCols = columns.filter((c) => c.type === 'formula' && c.formula);
+  const formulaCols = columns.filter((c) => c.type === 'formula' && formulaFor(c, cells));
   for (let pass = 0; pass < formulaCols.length; pass++) {
     let changed = false;
     for (const c of formulaCols) {
-      const v = evaluateFormula(c.formula as string, scope).value;
+      const v = evaluateFormula(formulaFor(c, cells), scope).value;
       if (scope[c.name] !== v) {
         scope[c.name] = v;
         changed = true;
@@ -85,7 +100,7 @@ export function cellNumber(
     return Number.isFinite(n) ? n : null;
   }
   if (col.type === 'formula') {
-    const r = evaluateFormula(col.formula ?? '', buildScope(table.columns, row.cells));
+    const r = evaluateFormula(formulaFor(col, row.cells), buildScope(table.columns, row.cells));
     return r.ok && typeof r.value === 'number' && Number.isFinite(r.value) ? r.value : null;
   }
   if (col.type === 'rollup') {
@@ -107,4 +122,24 @@ export function cellNumber(
     return Math.max(...nums);
   }
   return null;
+}
+
+export function computedCells(columns: Column[], cells: Record<string, CellValue>): Record<string, CellValue> {
+  const formulas = columns.filter((c) => c.type === 'formula');
+  if (!formulas.length) return cells;
+  const scope = buildScope(columns, cells);
+  const out: Record<string, CellValue> = { ...cells };
+  for (const c of formulas) {
+    const v = scope[c.name];
+    if (v !== undefined && !(typeof v === 'number' && !Number.isFinite(v))) out[c.id] = v;
+  }
+  return out;
+}
+
+export function queryRows(rows: TableRow[], columns: Column[], config: ViewConfig): TableRow[] {
+  const formulaIds = new Set(columns.filter((c) => c.type === 'formula').map((c) => c.id));
+  const uses = (id: string | undefined) => !!id && formulaIds.has(id);
+  if (!config.filters.some((f) => uses(f.columnId)) && !config.sorts.some((s) => uses(s.columnId))) return applyQuery(rows, columns, config);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return applyQuery(rows.map((r) => ({ ...r, cells: computedCells(columns, r.cells) })), columns, config).map((r) => byId.get(r.id) ?? r);
 }

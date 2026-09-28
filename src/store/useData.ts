@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { PRESET_TABLE_NAMES } from '../lib/tableWidgets';
 import type {
   Page,
   TableData,
@@ -4277,7 +4278,7 @@ export const useData = create<DataState>((set, get) => ({
     const { columns, view } = buildTablePreset(preset);
     try {
       const ws = activeWsForWrite();
-      const table = await tablesApi.create({ name: 'Untitled table', columns, workspace: ws });
+      const table = await tablesApi.create({ name: PRESET_TABLE_NAMES[preset] ?? 'Untitled table', columns, workspace: ws });
       set((s) => ({ tables: { ...s.tables, [table.id]: { ...table, views: view } } }));
       saveViewConfig(table.id, view); // localStorage fallback
       get().setTableView(table.id, view); // server (synced), tolerant if field absent

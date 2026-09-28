@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { useData } from '../store/useData';
+import { widgetFor } from '../lib/tableWidgets';
+import { TableWidget, WidgetShell } from './TableWidget';
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
@@ -64,9 +67,35 @@ function TablePicker({ onPick }: { onPick: (id: string) => void }) {
 // own view (tables.views), the original behaviour.
 // ---------------------------------------------------------------------------
 
+const SHOW_TABLE_KEY = 'wp-show-table:';
+
+function readShowTable(tableId: string): boolean {
+  try {
+    return localStorage.getItem(SHOW_TABLE_KEY + tableId) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeShowTable(tableId: string, on: boolean) {
+  try {
+    if (on) localStorage.setItem(SHOW_TABLE_KEY + tableId, '1');
+    else localStorage.removeItem(SHOW_TABLE_KEY + tableId);
+  } catch {
+    return;
+  }
+}
+
 function TableEmbedView({ node, updateAttributes, editor, getPos }: NodeViewProps) {
   const tableId = node.attrs.tableId as string;
   const viewConfig = (node.attrs.viewConfig as ViewConfig | null) ?? null;
+  const table = useData((s) => (tableId ? s.tables[tableId] : undefined));
+  const spec = viewConfig ? null : widgetFor(table);
+  const [showTable, setShowTableState] = useState(() => readShowTable(tableId));
+  const setShowTable = (on: boolean) => {
+    writeShowTable(tableId, on);
+    setShowTableState(on);
+  };
 
   // No table chosen yet (a /linked table reference): show the picker. Keep the
   // viewConfig the slash command seeded, so the chosen table is a linked view with
@@ -91,6 +120,7 @@ function TableEmbedView({ node, updateAttributes, editor, getPos }: NodeViewProp
         .insertContentAt(pos + node.nodeSize, { type: 'tableEmbed', attrs: { tableId, viewConfig: cfg } })
         .run();
     },
+    showWidget: spec ? () => setShowTable(false) : undefined,
     deleteEmbed: () => {
       const pos = typeof getPos === 'function' ? getPos() : null;
       if (pos == null) return;
@@ -101,8 +131,24 @@ function TableEmbedView({ node, updateAttributes, editor, getPos }: NodeViewProp
     },
   };
 
+  if (spec && !showTable) {
+    return (
+      <NodeViewWrapper className="my-3" contentEditable={false}>
+        {spec.bare ? (
+          <WidgetShell spec={spec} name={table?.name ?? ''} onShowTable={() => setShowTable(true)}>
+            <div className="mt-2 border-t border-paper-line dark:border-coal-line">
+              <TableView tableId={tableId} embed={embed} bare />
+            </div>
+          </WidgetShell>
+        ) : (
+          <TableWidget tableId={tableId} spec={spec} editable={editor.isEditable} onShowTable={() => setShowTable(true)} />
+        )}
+      </NodeViewWrapper>
+    );
+  }
+
   return (
-    <NodeViewWrapper className="my-4" contentEditable={false}>
+    <NodeViewWrapper className="my-3" contentEditable={false}>
       <TableView tableId={tableId} embed={embed} />
     </NodeViewWrapper>
   );

@@ -1,3 +1,4 @@
+import { computedCells } from '../lib/scope';
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useData } from '../store/useData';
@@ -279,7 +280,7 @@ export function CalendarView({
                       // Show the time only on the day the item STARTS (a spanning
                       // row shouldn't repeat its start time on every covered day).
                       const time = s && s.slice(0, 10) === dayIso ? /[T ](\d{2}:\d{2})/.exec(s)?.[1] : undefined;
-                      const tint = rowColor(r.cells, colorRules);
+                      const tint = rowColor(colorRules?.length ? computedCells(table.columns, r.cells) : r.cells, colorRules);
                       return (
                         <button
                           key={r.id}

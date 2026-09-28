@@ -1,4 +1,5 @@
 import type { Column, CellValue, FlowData, FlowNode, FlowEdge, FlowFilter, FlowCodeSpec, FlowActionSpec, FlowTrigger } from '../types';
+import { formulaFor } from './scope';
 import { evaluateFormula, type FormulaScope, type FormulaValue, type FxResolve } from './formula';
 import { applyActionsScoped } from './automations';
 import { detectCycle } from './deps';
@@ -341,11 +342,11 @@ export function cellScope(columns: Column[], cells: Record<string, CellValue>): 
     else if (c.type === 'text' || c.type === 'url' || c.type === 'select' || c.type === 'multiselect' || c.type === 'place') scope[c.name] = cellText(v, c);
   }
   // Repeat until stable so formulas can reference each other regardless of order.
-  const formulaCols = columns.filter((c) => c.type === 'formula' && c.formula);
+  const formulaCols = columns.filter((c) => c.type === 'formula' && formulaFor(c, cells));
   for (let pass = 0; pass < formulaCols.length; pass++) {
     let changed = false;
     for (const c of formulaCols) {
-      const v = evaluateFormula(c.formula as string, scope).value;
+      const v = evaluateFormula(formulaFor(c, cells), scope).value;
       if (scope[c.name] !== v) {
         scope[c.name] = v;
         changed = true;

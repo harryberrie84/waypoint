@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
+import { queryRows } from '../lib/scope';
 import { Download, Upload, FileJson, FileDown, ClipboardList } from 'lucide-react';
 import { useData, selectRowsForTable } from '../store/useData';
 import type { TableData, TableRow, PresenceRecord } from '../types';
-import { applyQuery, loadViewConfig, saveViewConfig, defaultViewConfig, type ViewConfig } from '../lib/tableQuery';
+import { loadViewConfig, saveViewConfig, defaultViewConfig, type ViewConfig } from '../lib/tableQuery';
 import { useMembers } from '../hooks/useMembers';
 import { useAuth } from '../store/useAuth';
 import { TableToolbar } from './TableToolbar';
@@ -70,7 +71,7 @@ export function KanbanView({ pageId, editable, presence }: { pageId: string; edi
     view && view.filters?.some((f) => f.value === '@me')
       ? { ...view, filters: view.filters.map((f) => (f.value === '@me' ? { ...f, value: myId } : f)) }
       : view;
-  const rows = view && table ? applyQuery(allRows, table.columns, resolvedView!) : allRows;
+  const rows = view && table ? queryRows(allRows, table.columns, resolvedView!) : allRows;
   // Persist a view change (the card-sort cog) the same way TableView does:
   // synced onto the table plus the localStorage fallback. Viewers can't edit.
   const onChangeView = (next: ViewConfig) => {

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Type, Hash, Tag, Tags, Calendar, CalendarClock, Sigma, CheckSquare, Link as LinkIcon, Link2, Calculator, BarChart3, Zap, ExternalLink, MapPin, Search, Loader2, X, Paperclip, AlarmClock, Clock, Globe, Users, Plus, Minus, Pencil, Eye, Check, UserPlus, ListChecks, Upload } from 'lucide-react';
+import { Type, Hash, Tag, Tags, Calendar, CalendarClock, Sigma, CheckSquare, Link as LinkIcon, Link2, Calculator, BarChart3, Zap, ExternalLink, MapPin, Search, Loader2, X, Paperclip, AlarmClock, Clock, Globe, Users, Plus, Minus, Pencil, Eye, Check, UserPlus, ListChecks, Upload, RotateCcw } from 'lucide-react';
 import { useData } from '../store/useData';
 import { TAG_COLORS, uid } from '../lib/id';
 import type { ChecklistItem } from '../types';
@@ -9,7 +9,7 @@ import { parseCellLink, formatCellLink, linkHref, type CellLink } from '../lib/c
 import type { Column, ColumnType, CellValue, GeoValue, SelectOption } from '../types';
 import { evaluateFormula, formatValue, formatFormulaValue, type FormulaValue } from '../lib/formula';
 import { geoOf, attachmentOf, resolveLookup } from '../lib/tableQuery';
-import { coerceNumber, buildScope } from '../lib/scope';
+import { coerceNumber, buildScope, ownFormulaKey } from '../lib/scope';
 import { dateStatus } from '../lib/reminders';
 import { parseLocaleNumber } from '../lib/number';
 import { parseHumanDate } from '../lib/humanDate';
@@ -160,18 +160,7 @@ export function Cell({
   const setCell = useData((s) => s.setCell);
 
   if (column.type === 'formula') {
-    const result = evaluateFormula(column.formula ?? '', scope);
-    return (
-      <div className="px-2 py-2.5 font-mono text-xs">
-        {result.ok ? (
-          <span className="text-ink dark:text-coal-text">{formatFormulaValue(result.value, column.numberFormat)}</span>
-        ) : (
-          <span className="text-red-500" title={result.error}>
-            #ERR
-          </span>
-        )}
-      </div>
-    );
+    return <FormulaCell rowId={rowId} column={column} scope={scope} />;
   }
 
   if (column.type === 'number') {
@@ -1604,5 +1593,78 @@ export function AttachmentCell({ rowId, column, value }: { rowId: string; column
 
       {staged && <UploadModal files={staged} onCancel={() => setStaged(null)} onUpload={(f) => void upload(f)} />}
     </div>
+  );
+}
+
+function FormulaCell({ rowId, column, scope }: { rowId: string; column: Column; scope: Record<string, FormulaValue> }) {
+  const setCell = useData((s) => s.setCell);
+  const key = ownFormulaKey(column.id);
+  const own = useData((s) => {
+    const v = s.rows[rowId]?.cells[key];
+    return typeof v === 'string' && v.trim() !== '' ? v : null;
+  });
+  const [draft, setDraft] = useState<string | null>(null);
+  const expr = own ?? column.formula ?? '';
+  const result = evaluateFormula(expr, scope);
+
+  const commit = (text: string) => {
+    const next = text.trim();
+    setDraft(null);
+    if (next === (own ?? '').trim()) return;
+    setCell(rowId, key, next === '' || next === (column.formula ?? '').trim() ? '' : next);
+  };
+
+  if (draft !== null) {
+    return (
+      <div className="flex items-center gap-1 px-1 py-1">
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => commit(draft)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit(draft);
+            if (e.key === 'Escape') setDraft(null);
+          }}
+          placeholder={column.formula || '[Nights] * [Rate]'}
+          aria-label={`Formula for this ${column.name} cell`}
+          className="min-w-0 flex-1 rounded border border-clay bg-paper px-1.5 py-1 font-mono text-xs text-ink outline-none dark:bg-coal-panel dark:text-coal-text"
+        />
+        {own && (
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setDraft(null);
+              setCell(rowId, key, '');
+            }}
+            title="Use the column's formula again"
+            aria-label="Use the column's formula again"
+            className="shrink-0 rounded p-1 text-ink-faint hover:bg-paper-panel hover:text-clay dark:text-coal-soft dark:hover:bg-coal-line"
+          >
+            <RotateCcw className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setDraft(expr)}
+      title={own ? `This cell has its own formula: ${own}` : `Click to give this cell its own formula. Column formula: ${column.formula || 'none yet'}`}
+      className="relative block w-full px-2 py-2.5 text-left font-mono text-xs"
+      data-own-formula={own ? '' : undefined}
+    >
+      {result.ok ? (
+        <span className="text-ink dark:text-coal-text">{formatFormulaValue(result.value, column.numberFormat)}</span>
+      ) : (
+        <span className="text-rose-500" title={result.error}>
+          #ERR
+        </span>
+      )}
+      {own && <span aria-hidden className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-clay" />}
+    </button>
   );
 }

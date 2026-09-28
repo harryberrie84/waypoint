@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { formulaFor } from '../lib/scope';
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
@@ -58,7 +59,7 @@ export function cellDisplay(
 ): string {
   if (!table || !row || !col) return '';
   if (col.type === 'formula') {
-    const r = evaluateFormula(col.formula ?? '', buildScope(table.columns, row.cells));
+    const r = evaluateFormula(formulaFor(col, row.cells), buildScope(table.columns, row.cells));
     return r.ok ? formatFormulaValue(r.value, col.numberFormat) : '#ERR';
   }
   if (col.type === 'number') {

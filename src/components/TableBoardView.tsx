@@ -1,3 +1,4 @@
+import { computedCells } from '../lib/scope';
 import { useRef, useState } from 'react';
 import { Plus, Trash2, GripVertical, CircleCheck, ArrowUpNarrowWide, ArrowDownWideNarrow, ChevronUp, ChevronDown, Settings2 } from 'lucide-react';
 import { useData } from '../store/useData';
@@ -240,7 +241,7 @@ export function BoardView({
           <div className="flex flex-col gap-2">
             {orderCards(g.rows).map((row) => {
               const here = presence?.get(row.id);
-              const tint = rowColor(row.cells, colorRules);
+              const tint = rowColor(colorRules?.length ? computedCells(table.columns, row.cells) : row.cells, colorRules);
               return (
                 <div key={row.id} className="relative">
                   {tint && <span className="absolute bottom-1 left-0 top-1 z-10 w-1 rounded-full" style={{ background: tint }} />}

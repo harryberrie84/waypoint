@@ -91,8 +91,9 @@ export function MapView({
     layerRef.current = L.layerGroup().addTo(map);
     map.on('click', (e: L.LeafletMouseEvent) => onMapClickRef.current(e.latlng));
     mapRef.current = map;
-    setTimeout(() => map.invalidateSize(), 50);
+    const sizeTimer = setTimeout(() => map.invalidateSize(), 50);
     return () => {
+      clearTimeout(sizeTimer);
       map.remove();
       mapRef.current = null;
       layerRef.current = null;

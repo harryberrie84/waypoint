@@ -38,6 +38,7 @@ import { modKey, undoHint, searchHint, isSearchShortcut, isLinux } from '../src/
 import { defaultTiers, buildTierRows, tierForRating, ratingForInsert } from '../src/lib/tierList.ts';
 import { beginWrite, endWrite, isWriting, isStaleRecord, keepPendingFields, resetWrites } from '../src/lib/proseSync.ts';
 import { keyTrustStatus } from '../src/lib/keyTrust.ts';
+import { widgetFor, formulaReady, weightedPick, nextActive, groupRows as widgetGroups, daysFrom, relativeDays, dueTone, nightsBetween, WIDGET_SPECS, PRESET_TABLE_NAMES } from '../src/lib/tableWidgets.ts';
 import { buildSetlistHtml, buildQuizHtml } from '../src/lib/widgetExport.ts';
 import {
   selectChildren, selectTopLevel, selectTemplates, selectTrashRoots,
@@ -138,6 +139,7 @@ import { appendCapture } from '../src/lib/capture.ts';
 import { STARTERS } from '../src/lib/starters.ts';
 import { buildSearchIndex, searchIndex, bestMatchWord } from '../src/lib/search.ts';
 import { splitCells } from '../src/lib/cellCrypto.ts';
+import { buildScope as scopeOf, cellNumber as numberOf, ownFormulaKey, formulaFor, computedCells, queryRows } from '../src/lib/scope.ts';
 import { forecastList, type DayWeather } from '../src/lib/weather.ts';
 import { serializeChecklist, parseChecklist, PACKING_TEMPLATE, READINESS_TEMPLATE } from '../src/lib/checklistIO.ts';
 import { serializeVote, parseVote, VOTE_TEMPLATE } from '../src/lib/voteIO.ts';
@@ -5557,6 +5559,104 @@ test('the pages list asks for every page field but the Yjs snapshot', () => {
   const schema = JSON.parse(readFileSync(new URL('../pocketbase/schema.json', import.meta.url), 'utf8')) as { name: string; schema: { name: string }[] }[];
   const want = ['id', 'collectionId', 'collectionName', 'created', 'updated', ...schema.find((c) => c.name === 'pages')!.schema.map((f) => f.name).filter((n) => n !== 'ydoc')];
   eq([...PAGE_LIST_FIELDS.split(',')].sort().join(), [...want].sort().join(), 'a page field missing here would load as empty and could be saved back empty; add it to lib/pageFields.ts');
+});
+
+test('every named preset opens as its own widget, and plain tables stay tables', () => {
+  for (const preset of Object.keys(PRESET_TABLE_NAMES)) {
+    const { columns } = buildTablePreset(preset as never);
+    const spec = widgetFor({ columns });
+    ok(!!spec, `the ${preset} preset has no widget view, so it opens as a bare grid`);
+    for (const name of [spec!.title, spec!.check, spec!.group, spec!.due, spec!.amount].filter(Boolean) as string[]) {
+      ok(columns.some((c) => c.name === name) || name.endsWith(' '), `${preset}: the widget reads a "${name}" column the preset does not make`);
+    }
+  }
+  for (const plain of ['grid', 'board', 'calendar', 'timeline', 'gallery', 'map', 'poll']) {
+    eq(widgetFor({ columns: buildTablePreset(plain as never).columns }), null, `a ${plain} someone inserted as a table must stay a table`);
+  }
+  eq(widgetFor({ columns: buildTablePreset('packing').columns, formKey: 'x' }), null, 'form tables are plumbing, not widgets');
+  ok(WIDGET_SPECS.every((s) => !/—/.test(s.label + s.noun)), 'no em-dashes in widget copy');
+});
+
+test('a widget does not show a computed value until its inputs are filled', () => {
+  const { columns } = buildTablePreset('accommodation');
+  const id = (n: string) => columns.find((c) => c.name === n)!.id;
+  const total = columns.find((c) => c.name === 'Total')!;
+  const row = (cells: Record<string, unknown>) => ({ id: 'r', table: 't', cells, position: 0 }) as unknown as TableRow;
+  ok(!formulaReady(total, row({}), columns), 'an empty stay would otherwise read as costing 0');
+  ok(!formulaReady(total, row({ [id('Check-in')]: '2026-03-01', [id('Check-out')]: '2026-03-04' }), columns), 'no rate yet');
+  ok(formulaReady(total, row({ [id('Check-in')]: '2026-03-01', [id('Check-out')]: '2026-03-04', [id('Rate')]: 9000 }), columns), 'dates and rate given');
+  eq(nightsBetween('2026-03-01', '2026-03-04'), 3, 'three nights');
+  eq(nightsBetween('2026-03-04', '2026-03-01'), 0, 'dates the wrong way round are not negative nights');
+});
+
+test('days until a date, and how urgent it looks', () => {
+  const now = new Date(2026, 8, 28, 23, 30);
+  eq(daysFrom('2026-09-28', now), 0, 'late in the evening is still today');
+  eq(daysFrom('2026-09-29T08:00', now), 1, 'a datetime counts by calendar day');
+  eq(daysFrom('', now), null, 'no date');
+  eq(relativeDays(0) + '|' + relativeDays(1) + '|' + relativeDays(-2) + '|' + relativeDays(5), 'today|tomorrow|2 days ago|in 5 days', 'wording');
+  eq([dueTone(-1, false), dueTone(3, false), dueTone(30, false), dueTone(-1, true), dueTone(null, false)].join(), 'late,soon,later,done,none', 'a paid bill is never late');
+});
+
+test('roll tables respect weights, and the initiative turn moves in order', () => {
+  const w = { id: 'w', name: 'Weight', type: 'number' } as never;
+  const rows = [{ id: 'a', cells: { w: 1 } }, { id: 'b', cells: { w: 3 } }, { id: 'c', cells: { w: 0 } }] as unknown as TableRow[];
+  const counts: Record<string, number> = { a: 0, b: 0, c: 0 };
+  for (let i = 0; i < 400; i++) counts[weightedPick(rows, w, () => i / 400)!.id]++;
+  eq(counts.c, 0, 'a zero weight never comes up');
+  ok(counts.b > counts.a * 2, `weight 3 should come up about three times as often as weight 1 (${counts.b} vs ${counts.a})`);
+  const active = { id: 'act', name: 'Active', type: 'checkbox' } as never;
+  const order = [{ id: 'x', cells: {} }, { id: 'y', cells: { act: true } }, { id: 'z', cells: {} }] as unknown as TableRow[];
+  eq(JSON.stringify(nextActive(order, active)), JSON.stringify({ off: ['y'], on: 'z' }), 'next turn goes to the next in order');
+  eq(nextActive([order[0], { ...order[1], cells: {} }, { ...order[2], cells: { act: true } }] as TableRow[], active).on, 'x', 'after the last it wraps to the top');
+  eq(nextActive([order[0], { ...order[1], cells: {} }, order[2]] as TableRow[], active).on, 'x', 'with nobody active the first starts');
+});
+
+test('grouped widgets keep the option order and put ungrouped rows last', () => {
+  const col = { id: 'g', name: 'Aisle', type: 'select', options: [{ id: 'o1', label: 'Fruit' }, { id: 'o2', label: 'Dairy' }] } as never;
+  const rows = [{ id: '1', cells: { g: 'o2' } }, { id: '2', cells: {} }, { id: '3', cells: { g: 'o1' } }] as unknown as TableRow[];
+  eq(widgetGroups(rows, col).map((g) => `${g.label}:${g.rows.map((r) => r.id).join('')}`).join(' '), 'Fruit:3 Dairy:1 Other:2', 'groups');
+});
+
+test('a cell can carry its own formula, and everything reads the one that applies', () => {
+  const cols = [
+    { id: 'n', name: 'Nights', type: 'number' },
+    { id: 'r', name: 'Rate', type: 'number' },
+    { id: 't', name: 'Total', type: 'formula', formula: '[Nights] * [Rate]' },
+    { id: 'b', name: 'With tip', type: 'formula', formula: '[Total] + 10' },
+  ] as never as Column[];
+  const plain = { n: 3, r: 100 };
+  const own = { n: 3, r: 100, [ownFormulaKey('t')]: '[Nights] * [Rate] * 0.5' };
+  eq(scopeOf(cols, plain).Total, 300, 'the column formula');
+  eq(scopeOf(cols, own).Total, 150, 'this cell’s own formula wins');
+  eq(scopeOf(cols, own)['With tip'], 160, 'a formula reading an overridden cell sees the override');
+  eq(scopeOf(cols, { ...own, [ownFormulaKey('t')]: '  ' }).Total, 300, 'a blank override falls back to the column');
+  eq(formulaFor(cols[2], own), '[Nights] * [Rate] * 0.5', 'formulaFor');
+  const table = { id: 'x', name: 'x', columns: cols } as never as TableData;
+  eq(numberOf(table, { id: '1', cells: own } as never as TableRow, cols[2], {}), 150, 'totals and budgets read the override');
+  eq(computedCells(cols, own).t, 150, 'computed values carry the override');
+  const selfRef = { n: 3, r: 100, [ownFormulaKey('t')]: '[Total] + 1' };
+  ok(Number.isFinite(Number(scopeOf(cols, selfRef).Total)), 'a cell that reads itself settles instead of hanging');
+  const { secret, operational } = splitCells(own as never, cols);
+  ok(ownFormulaKey('t') in secret && !(ownFormulaKey('t') in operational), 'an override is encrypted with the rest of the row');
+});
+
+test('sorting and filtering on a formula column use the computed values', () => {
+  const cols = [
+    { id: 'n', name: 'Name', type: 'text' },
+    { id: 'a', name: 'A', type: 'number' },
+    { id: 'd', name: 'Double', type: 'formula', formula: '[A] * 2' },
+  ] as never as Column[];
+  const rows = [
+    { id: 'x', cells: { n: 'x', a: 5 }, position: 0 },
+    { id: 'y', cells: { n: 'y', a: 1 }, position: 1 },
+    { id: 'z', cells: { n: 'z', a: 3, [ownFormulaKey('d')]: '100' }, position: 2 },
+  ] as never as TableRow[];
+  const view = { id: 'v', name: 'v', type: 'grid', filters: [], sorts: [{ id: 's', columnId: 'd', dir: 'desc' }] } as never;
+  eq(queryRows(rows, cols, view).map((r) => r.id).join(''), 'zxy', 'sorted by the computed value, override included');
+  ok(queryRows(rows, cols, view)[0] === rows[2], 'the original row objects come back, not copies with computed values');
+  const filtered = queryRows(rows, cols, { ...view, sorts: [], filters: [{ id: 'f', columnId: 'd', op: 'gt', value: 5 }] } as never);
+  eq(filtered.map((r) => r.id).join(''), 'xz', 'filtered by the computed value');
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);

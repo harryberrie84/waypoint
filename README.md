@@ -165,7 +165,8 @@ npm run predeploy
   list loads.
 - `npm run test:e2e`: the built app in Chromium. Signing up, writing and reloading,
   trash, two people editing one page, invites, sign-out on a shared computer,
-  reconnecting, the `/` menu, tables, comments, and staying quick while others type.
+  reconnecting, the `/` menu, tables, widgets over tables, a formula per cell,
+  comments, and staying quick while others type.
 
 Each check says why it matters when it fails. CI runs the same command on every
 push, and a release tag cannot build an image unless it passes.

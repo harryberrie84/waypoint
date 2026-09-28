@@ -140,8 +140,10 @@ function insertBudget(editor: Editor, range: Range) {
       editor
         .chain()
         .focus()
-        .insertContent({ type: 'tableEmbed', attrs: { tableId } })
-        .insertContent({ type: 'budgetSummary', attrs: { tableId, base: getBaseCurrency() } })
+        .insertContent([
+          { type: 'tableEmbed', attrs: { tableId } },
+          { type: 'budgetSummary', attrs: { tableId, base: getBaseCurrency() } },
+        ])
         .run();
     });
 }
@@ -169,9 +171,11 @@ function insertCampaign(editor: Editor, range: Range) {
     .createCampaignBundle()
     .then((ids) => {
       if (!ids.length) return;
-      let chain = editor.chain().focus();
-      for (const tableId of ids) chain = chain.insertContent({ type: 'tableEmbed', attrs: { tableId } });
-      chain.run();
+      editor
+        .chain()
+        .focus()
+        .insertContent(ids.map((tableId) => ({ type: 'tableEmbed', attrs: { tableId } })))
+        .run();
     });
 }
 
@@ -1080,7 +1084,7 @@ const CommandMenu = forwardRef(function CommandMenu(
         const Icon = item.icon;
         return (
           <button
-            key={item.title}
+            key={`${item.title}-${item.subtitle}`}
             type="button"
             onMouseEnter={() => setSelected(i)}
             onClick={() => pick(i)}
