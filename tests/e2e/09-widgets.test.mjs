@@ -70,6 +70,41 @@ export default async function () {
         ok((await packing.innerText()).includes('1/2 packed'), 'the count reads 1/2 packed');
       });
 
+    await check('typing into a new item before the server has made it is not lost',
+      'On a slow connection the name typed into a just-added item was saved against a temporary id, refused, and gone after a reload.',
+      async () => {
+        await page.route('**/api/collections/table_rows/records', async (route) => {
+          if (route.request().method() === 'POST') await new Promise((r) => setTimeout(r, 1500));
+          await route.continue();
+        });
+        await packing.getByRole('button', { name: 'Add an item' }).click();
+        await waitFor(async () => (await packing.locator('input[placeholder^="Name this"]').count()) === 3, 'a third item');
+        const fresh = await packing.locator('input[placeholder^="Name this"]:placeholder-shown').first().elementHandle();
+        await fresh.click();
+        await page.keyboard.type('Adapter');
+        await page.waitForTimeout(2500);
+        await page.keyboard.type(' plug');
+        ok(await fresh.evaluate((el) => el === document.activeElement), 'the field kept focus when the server made the row');
+        await page.unroute('**/api/collections/table_rows/records');
+        await page.waitForTimeout(2500);
+        await page.reload();
+        await packing.waitFor({ timeout: 15000 });
+        await waitFor(async () => (await packing.locator('input[placeholder^="Name this"]').evaluateAll((els) => els.map((e) => e.value))).includes('Adapter plug'), 'the typed name after a reload', 15000);
+      });
+
+    await check('removing an item by mistake can be undone, and the undo survives a reload',
+      'On a phone the remove button sits next to the item; one stray tap must not cost the item or its tick.',
+      async () => {
+        await packing.getByRole('button', { name: 'Remove Passport' }).click();
+        await waitFor(async () => (await packing.getByRole('button', { name: 'Untick Passport' }).count()) === 0, 'Passport gone');
+        await page.getByRole('button', { name: 'Undo' }).click();
+        await waitFor(async () => (await packing.getByRole('button', { name: 'Untick Passport' }).count()) === 1, 'Passport back, still ticked');
+        await page.waitForTimeout(2500);
+        await page.reload();
+        await packing.waitFor({ timeout: 15000 });
+        await waitFor(async () => (await packing.getByRole('button', { name: 'Untick Passport' }).count()) === 1, 'Passport, ticked, after a reload', 15000);
+      });
+
     await check('the table is one click away and shows the same rows, and folds back',
       'Filters, fields and formulas live in the table; hiding it must not lock anyone out of it.',
       async () => {

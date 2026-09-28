@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { formulaFor, queryRows, computedCells } from '../lib/scope';
 import { Plus, Trash2, Tag, ChevronDown, ChevronRight, Maximize2, Download, Upload, FileText, Copy, CalendarPlus, Link2, Unlink, AlertTriangle, ArrowLeft, ArrowRight, Share2, RefreshCw, Globe, LayoutList } from 'lucide-react';
 import { findClashes } from '../lib/clash';
-import { useData, selectRowsForTable } from '../store/useData';
+import { useData, selectRowsForTable, stableRowKey } from '../store/useData';
 import { toastWithAction } from '../store/useToast';
 import { confirmAsk } from '../store/useConfirm';
 import { useWorkspace } from '../store/useWorkspace';
@@ -394,7 +394,7 @@ function GridView({
               const tint = rowColor(colorRules?.length ? computedCells(table.columns, row.cells) : row.cells, colorRules);
               return (
                 <tr
-                  key={row.id}
+                  key={stableRowKey(row.id)}
                   className={[
                     'group border-b border-paper-line last:border-0 dark:border-coal-line',
                     clashing && !tint ? 'bg-rose-500/[0.06]' : '',

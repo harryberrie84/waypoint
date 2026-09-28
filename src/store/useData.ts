@@ -76,6 +76,13 @@ function resolveAutomations(table: { automations?: Automation[] | null; id: stri
 // Guard so automation-applied writes don't re-trigger automations (no loops).
 let automationRunning = false;
 
+const unsavedRows = new Set<string>();
+const rowKeyAlias = new Map<string, string>();
+
+export function stableRowKey(rowId: string): string {
+  return rowKeyAlias.get(rowId) ?? rowId;
+}
+
 // Cover images persist to `pages.cover` when that field exists; otherwise the
 // server echo comes back blank and would wipe the optimistic value (the cover
 // "flashes" then vanishes). We mirror covers to localStorage and restore them
@@ -4732,6 +4739,7 @@ export const useData = create<DataState>((set, get) => ({
       updated: new Date().toISOString(),
     };
     set((s) => ({ rows: { ...s.rows, [tempId]: optimistic } }));
+    unsavedRows.add(tempId);
     try {
       const ws = get().tables[tableId]?.workspace || activeWsForWrite();
       // Encrypt the new row's cells in an encrypted workspace (falls back to the
@@ -4741,19 +4749,27 @@ export const useData = create<DataState>((set, get) => ({
       // Claim the envelope so the create echo doesn't re-lock the row we just made.
       noteOwnCellsEnvelope(row.id, cellsStore);
       if (parentId) saveRowParent(row.id, parentId); // survives the echo if the field is missing
+      let typed: Record<string, CellValue> = cells;
       set((s) => {
         const rows = { ...s.rows };
+        typed = s.rows[tempId]?.cells ?? cells;
         delete rows[tempId];
         // Keep the plaintext cells in memory (the persisted copy may be encrypted).
-        rows[row.id] = { ...hydrateRow(row), cells, cellsEnc: undefined };
+        rows[row.id] = { ...hydrateRow(row), cells: typed, cellsEnc: undefined };
         return { rows };
       });
+      unsavedRows.delete(tempId);
+      rowKeyAlias.set(row.id, tempId);
+      for (const [cid, v] of Object.entries(typed)) {
+        if (cells[cid] !== v) get().setCell(row.id, cid, v);
+      }
       // rowCreated flows fire on the real row id, unless we're already inside a
       // flow/automation (a flow that creates rows must not chain into itself).
       if (!automationRunning) runRowCreatedFlows(get, tableId, row.id, cells);
       return row.id;
     } catch (err) {
       console.error('[data] addRow failed', err);
+      unsavedRows.delete(tempId);
       set((s) => {
         const rows = { ...s.rows };
         delete rows[tempId];
@@ -4812,6 +4828,7 @@ export const useData = create<DataState>((set, get) => ({
       nextCells = { ...row.cells, [columnId]: value };
       return { rows: { ...s.rows, [rowId]: { ...row, cells: nextCells } } };
     });
+    if (unsavedRows.has(rowId)) return;
     const ws = get().rows[rowId]?.workspace ?? '';
     const cols = get().tables[get().rows[rowId]?.table ?? '']?.columns ?? [];
     // Guard the cells against their own echo: hold the typed values until this save

@@ -3,8 +3,9 @@ import {
   BedDouble, BookMarked, CalendarClock, Check, ChefHat, Dices, ExternalLink, GraduationCap, Home, Luggage, Map as MapIcon,
   NotebookPen, Plane, Plus, Receipt, Repeat, ShoppingCart, Swords, Table2, Trash2, Wallet, ScrollText, CalendarDays, ChevronRight,
 } from 'lucide-react';
-import { useData, selectRowsForTable } from '../store/useData';
+import { useData, selectRowsForTable, stableRowKey } from '../store/useData';
 import { useMembers } from '../hooks/useMembers';
+import { toastWithAction } from '../store/useToast';
 import type { Column, TableData, TableRow } from '../types';
 import { cellDisplay } from './CustomCardBlock';
 import { initials, avatarColor } from '../lib/avatar';
@@ -261,6 +262,15 @@ function WidgetBody({
     setRolled(pick?.id ?? null);
   };
 
+  const removeRow = (row: TableRow, title: string) => {
+    const cells = { ...row.cells };
+    void deleteRow(row.id);
+    toastWithAction(`Removed ${title || `the ${spec.noun}`}`, {
+      label: 'Undo',
+      run: () => void addRow(tableId, cells),
+    });
+  };
+
   const nextTurn = () => {
     if (!combat?.active) return;
     const { off, on } = nextActive(visible, combat.active);
@@ -308,7 +318,7 @@ function WidgetBody({
     const highlighted = rolled === row.id || isActive;
 
     return (
-      <div key={row.id} className={[itemRow, 'group flex-wrap', highlighted ? 'bg-clay-wash/60 dark:bg-clay/15' : ''].join(' ')} data-row={row.id}>
+      <div key={stableRowKey(row.id)} className={[itemRow, 'group flex-wrap', highlighted ? 'bg-clay-wash/60 dark:bg-clay/15' : ''].join(' ')} data-row={row.id}>
         {checkCol && (
           <button
             type="button"
@@ -446,7 +456,7 @@ function WidgetBody({
         {editable && (
           <button
             type="button"
-            onClick={() => void deleteRow(row.id)}
+            onClick={() => removeRow(row, title)}
             className="rounded-md p-1.5 text-ink-faint hover:text-rose-500 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 dark:text-coal-soft"
             title="Remove"
             aria-label={`Remove ${title || spec.noun}`}

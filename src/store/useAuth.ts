@@ -60,6 +60,7 @@ let ending = false;
 async function endSession(): Promise<void> {
   if (ending) return;
   ending = true;
+  (pb.realtime as unknown as { disconnect: () => void }).disconnect();
   await useVault.getState().lock().catch(() => {});
   await clearDataset();
   pb.authStore.clear();
