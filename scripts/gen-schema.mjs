@@ -104,9 +104,10 @@ ADD_FIELDS.workspaces = [text('numberStyle', 20)];
 // them every one of these reads scans the whole collection (1700000014 again).
 const idx = (col, field) => `CREATE INDEX \`idx_${col}_${field}\` ON \`${col}\` (\`${field}\`)`;
 const ADD_INDEXES = {
-  pages: [idx('pages', 'workspace'), idx('pages', 'parent')],
-  tables: [idx('tables', 'workspace')],
-  table_rows: [idx('table_rows', 'table'), idx('table_rows', 'workspace')],
+  // `updated` is what the reconnect catch-up asks by, on every reconnect.
+  pages: [idx('pages', 'workspace'), idx('pages', 'parent'), idx('pages', 'updated')],
+  tables: [idx('tables', 'workspace'), idx('tables', 'updated')],
+  table_rows: [idx('table_rows', 'table'), idx('table_rows', 'workspace'), idx('table_rows', 'updated')],
   comments: [idx('comments', 'page'), idx('comments', 'thread'), idx('comments', 'row')],
   presence: [idx('presence', 'page'), idx('presence', 'user')],
   workspace_invites: [idx('workspace_invites', 'email')],

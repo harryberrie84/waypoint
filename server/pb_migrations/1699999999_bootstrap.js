@@ -441,7 +441,8 @@ migrate(
             "id": "wpcolpages00001",
             "indexes": [
                 "CREATE INDEX `idx_pages_workspace` ON `pages` (`workspace`)",
-                "CREATE INDEX `idx_pages_parent` ON `pages` (`parent`)"
+                "CREATE INDEX `idx_pages_parent` ON `pages` (`parent`)",
+                "CREATE INDEX `idx_pages_updated` ON `pages` (`updated`)"
             ]
         },
         {
@@ -547,7 +548,8 @@ migrate(
             "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
             "id": "wpcoltables0001",
             "indexes": [
-                "CREATE INDEX `idx_tables_workspace` ON `tables` (`workspace`)"
+                "CREATE INDEX `idx_tables_workspace` ON `tables` (`workspace`)",
+                "CREATE INDEX `idx_tables_updated` ON `tables` (`updated`)"
             ]
         },
         {
@@ -654,7 +656,8 @@ migrate(
             "id": "wpcoltablerows1",
             "indexes": [
                 "CREATE INDEX `idx_table_rows_table` ON `table_rows` (`table`)",
-                "CREATE INDEX `idx_table_rows_workspace` ON `table_rows` (`workspace`)"
+                "CREATE INDEX `idx_table_rows_workspace` ON `table_rows` (`workspace`)",
+                "CREATE INDEX `idx_table_rows_updated` ON `table_rows` (`updated`)"
             ]
         },
         {

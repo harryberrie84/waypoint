@@ -826,8 +826,10 @@ interface DataState {
   pendingWorkspaceMove: { opId: string; label: string } | null;
 
   hydrate: () => Promise<void>;
+  applyServerChange: (collection: 'pages' | 'tables' | 'table_rows', action: string, record: RecordModel) => void;
   _hydrateOnce: () => Promise<void>; // the body of hydrate; call hydrate instead
   subscribeRealtime: () => Promise<void>;
+  catchUp: () => Promise<void>;
   unsubscribeRealtime: () => Promise<void>;
   teardown: () => void;
 
@@ -1316,6 +1318,14 @@ function pbUserId(): string {
 // refresh drops these, so a post-refresh revert restores structure + relations only.
 const moveContentSnaps = new Map<string, { pageId: string; oldContent: unknown }[]>();
 
+// The newest `updated` stamp seen from the server (a full load or any realtime
+// event). Server time only, so no device clock is ever compared with it.
+let serverWatermark = '';
+const noteServerTime = (updated: unknown) => {
+  if (typeof updated === 'string' && updated > serverWatermark) serverWatermark = updated;
+};
+let catchUpRunning = false;
+
 let hydrateRunning: Promise<void> | null = null;
 let hydrateQueued: Promise<void> | null = null;
 
@@ -1460,6 +1470,7 @@ export const useData = create<DataState>((set, get) => ({
 
       // Restore a pending Revert/Accept notice across a refresh (only Accept/Revert
       // clears it), so a move can't become un-revertable just by reloading.
+      for (const x of [...pages, ...tables, ...rows]) noteServerTime(x.updated);
       set({ pages: pageMap, tables: tableMap, rows: rowMap, loaded: true, loadError: null, activePageId: active, pendingWorkspaceMove: loadPendingMove() });
       markFlowsDirty();
       startScheduleTick(get); // schedule triggers fire on their own from here
@@ -1468,10 +1479,12 @@ export const useData = create<DataState>((set, get) => ({
     }
   },
 
-  subscribeRealtime: async () => {
-    // pages
-    await pb.collection('pages').subscribe('*', (e) => {
-      const { action, record } = e as { action: string; record: RecordModel };
+  // One entry point for a server change to a page, table or row, whether it came
+  // over the realtime stream or from the reconnect catch-up below, so both pass
+  // the same stale-echo and mid-edit guards.
+  applyServerChange: (collection, action, record) => {
+    noteServerTime(record.updated);
+    if (collection === 'pages') {
       markFlowsDirty(); // a page create/update/delete may add or change a flow
       set((s) => {
         const pages = { ...s.pages };
@@ -1499,10 +1512,7 @@ export const useData = create<DataState>((set, get) => ({
         pages[record.id] = merged;
         return { pages };
       });
-    });
-    // tables
-    await pb.collection('tables').subscribe('*', (e) => {
-      const { action, record } = e as { action: string; record: RecordModel };
+    } else if (collection === 'tables') {
       set((s) => {
         const tables = { ...s.tables };
         if (action === 'delete') delete tables[record.id];
@@ -1515,10 +1525,7 @@ export const useData = create<DataState>((set, get) => ({
         }
         return { tables };
       });
-    });
-    // rows
-    await pb.collection('table_rows').subscribe('*', (e) => {
-      const { action, record } = e as { action: string; record: RecordModel };
+    } else {
       set((s) => {
         const rows = { ...s.rows };
         if (action === 'delete') {
@@ -1571,7 +1578,45 @@ export const useData = create<DataState>((set, get) => ({
         rows[record.id] = merged;
         return { rows };
       });
-    });
+    }
+  },
+
+  subscribeRealtime: async () => {
+    const on = (collection: 'pages' | 'tables' | 'table_rows') => (e: unknown) => {
+      const { action, record } = e as { action: string; record: RecordModel };
+      get().applyServerChange(collection, action, record);
+    };
+    await pb.collection('pages').subscribe('*', on('pages'));
+    await pb.collection('tables').subscribe('*', on('tables'));
+    await pb.collection('table_rows').subscribe('*', on('table_rows'));
+  },
+
+  // After the realtime stream reconnects, fetch only what changed while it was
+  // down and apply it like any other event. PocketBase 0.22 closes an idle
+  // stream every few minutes and the client reconnects on its own, so this runs
+  // often and must stay cheap: three filtered lists that are usually empty, where
+  // a full reload would download every page, table and row. A minute of overlap
+  // covers writes that landed just before the drop. It cannot see hard deletes
+  // (a trash is an update and is seen); the full resync on return still does.
+  catchUp: async () => {
+    if (!get().loaded || !serverWatermark || catchUpRunning) return;
+    catchUpRunning = true;
+    try {
+      const since = new Date(Date.parse(serverWatermark.replace(' ', 'T')) - 60_000).toISOString().replace('T', ' ');
+      const opts = { filter: pb.filter('updated >= {:since}', { since }), sort: 'updated,id' };
+      const [p, t, r] = await Promise.all([
+        pb.collection('pages').getFullList(opts),
+        pb.collection('tables').getFullList(opts),
+        pb.collection('table_rows').getFullList(opts),
+      ]);
+      for (const rec of p) get().applyServerChange('pages', 'update', rec);
+      for (const rec of t) get().applyServerChange('tables', 'update', rec);
+      for (const rec of r) get().applyServerChange('table_rows', 'update', rec);
+    } catch {
+      /* the next reconnect, or the full resync on return, tries again */
+    } finally {
+      catchUpRunning = false;
+    }
   },
 
   unsubscribeRealtime: async () => {

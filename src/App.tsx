@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './store/useAuth';
+import { pb } from './lib/pocketbase';
 import { useData } from './store/useData';
 import { useWorkspace } from './store/useWorkspace';
 import { useVault } from './store/useVault';
@@ -249,7 +250,21 @@ function Workspace() {
     const onResume = () => void resync();
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('online', onResume);
+    // Every (re)connect of the stream, including the one PocketBase forces on an
+    // idle stream every few minutes and the one after a server restart while this
+    // tab sat in front of someone: fetch just what changed meanwhile (catchUp).
+    let dropConnect: (() => Promise<void>) | null = null;
+    let gone = false;
+    void pb.realtime
+      .subscribe('PB_CONNECT', () => void useData.getState().catchUp())
+      .then((fn) => {
+        if (gone) void fn();
+        else dropConnect = fn;
+      })
+      .catch(() => {});
     return () => {
+      gone = true;
+      if (dropConnect) void dropConnect();
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('online', onResume);
     };
