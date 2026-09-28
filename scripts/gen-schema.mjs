@@ -90,6 +90,29 @@ const ADD_FIELDS = {
   presence: [text('cursor', 5000), text('focus', 200)],
 };
 
+// Four more of the same kind, found by checking every client write against this
+// file (1700000014 adds them to an existing install). `pages.trashed` is the one
+// that hurt: with no field, trashing a page returned 200 and came back on reload,
+// and the 14-day purge never found anything. The other three only ever lived in
+// the browser that set them (a localStorage mirror hid it on that one device).
+ADD_FIELDS.pages.push(bool('trashed'));
+ADD_FIELDS.tables.push(json('views'), json('automations'));
+ADD_FIELDS.workspaces = [text('numberStyle', 20)];
+
+// Indexes on what the client filters by and what the rules join through. Without
+// them every one of these reads scans the whole collection (1700000014 again).
+const idx = (col, field) => `CREATE INDEX \`idx_${col}_${field}\` ON \`${col}\` (\`${field}\`)`;
+const ADD_INDEXES = {
+  pages: [idx('pages', 'workspace'), idx('pages', 'parent')],
+  tables: [idx('tables', 'workspace')],
+  table_rows: [idx('table_rows', 'table'), idx('table_rows', 'workspace')],
+  comments: [idx('comments', 'page'), idx('comments', 'thread'), idx('comments', 'row')],
+  presence: [idx('presence', 'page'), idx('presence', 'user')],
+  workspace_invites: [idx('workspace_invites', 'email')],
+  uploads: [idx('uploads', 'workspace')],
+  file_trash: [idx('file_trash', 'workspace')],
+};
+
 // Collections the base schema never had. Rules copied from the reconciler verbatim.
 const NEW_COLLECTIONS = [
   {
@@ -161,6 +184,11 @@ for (const col of kept) {
 // real drift gate instead of a diff against itself.
 const have = new Set(kept.map((c) => c.name));
 const all = [...kept, ...NEW_COLLECTIONS.filter((c) => !have.has(c.name))];
+for (const col of all) {
+  for (const i of ADD_INDEXES[col.name] || []) {
+    if (!col.indexes.includes(i)) col.indexes.push(i);
+  }
+}
 
 // Every field gets the full 0.22 shape so saveCollection never sees a partial.
 for (const col of all) {

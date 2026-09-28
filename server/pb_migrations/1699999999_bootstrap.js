@@ -421,6 +421,16 @@ migrate(
                         "max": 5000000,
                         "pattern": ""
                     }
+                },
+                {
+                    "system": false,
+                    "id": "00014kp2nh",
+                    "name": "trashed",
+                    "type": "bool",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {}
                 }
             ],
             "listRule": "(@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id || viewers.id ?= @request.auth.id)) || (publicToken != \"\" && publicToken = @request.query.token)",
@@ -429,7 +439,10 @@ migrate(
             "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id)",
             "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id)",
             "id": "wpcolpages00001",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_pages_workspace` ON `pages` (`workspace`)",
+                "CREATE INDEX `idx_pages_parent` ON `pages` (`parent`)"
+            ]
         },
         {
             "name": "tables",
@@ -501,6 +514,30 @@ migrate(
                         "max": null,
                         "pattern": ""
                     }
+                },
+                {
+                    "system": false,
+                    "id": "00003homn9",
+                    "name": "views",
+                    "type": "json",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {
+                        "maxSize": 2000000
+                    }
+                },
+                {
+                    "system": false,
+                    "id": "000015fv3n",
+                    "name": "automations",
+                    "type": "json",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {
+                        "maxSize": 2000000
+                    }
                 }
             ],
             "listRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
@@ -509,7 +546,9 @@ migrate(
             "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
             "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
             "id": "wpcoltables0001",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_tables_workspace` ON `tables` (`workspace`)"
+            ]
         },
         {
             "name": "table_rows",
@@ -613,7 +652,10 @@ migrate(
             "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
             "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
             "id": "wpcoltablerows1",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_table_rows_table` ON `table_rows` (`table`)",
+                "CREATE INDEX `idx_table_rows_workspace` ON `table_rows` (`workspace`)"
+            ]
         },
         {
             "name": "comments",
@@ -714,7 +756,11 @@ migrate(
             "updateRule": "author = @request.auth.id",
             "deleteRule": "author = @request.auth.id",
             "id": "wpcolcomments01",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_comments_page` ON `comments` (`page`)",
+                "CREATE INDEX `idx_comments_thread` ON `comments` (`thread`)",
+                "CREATE INDEX `idx_comments_row` ON `comments` (`row`)"
+            ]
         },
         {
             "name": "presence",
@@ -823,7 +869,10 @@ migrate(
             "updateRule": "user = @request.auth.id",
             "deleteRule": "user = @request.auth.id",
             "id": "wpcolpresence01",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_presence_page` ON `presence` (`page`)",
+                "CREATE INDEX `idx_presence_user` ON `presence` (`user`)"
+            ]
         },
         {
             "name": "workspaces",
@@ -886,6 +935,20 @@ migrate(
                     "presentable": false,
                     "unique": false,
                     "options": {}
+                },
+                {
+                    "system": false,
+                    "id": "0001ffbu60",
+                    "name": "numberStyle",
+                    "type": "text",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {
+                        "min": null,
+                        "max": 20,
+                        "pattern": ""
+                    }
                 }
             ],
             "listRule": "@request.auth.id != \"\" && workspace_members_via_workspace.user ?= @request.auth.id",
@@ -1064,7 +1127,9 @@ migrate(
             "updateRule": null,
             "deleteRule": "@request.auth.id != \"\" && (workspace.owner ?= @request.auth.id || email = @request.auth.email)",
             "id": "wpcolwsinvites1",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_workspace_invites_email` ON `workspace_invites` (`email`)"
+            ]
         },
         {
             "name": "user_keys",
@@ -1410,7 +1475,9 @@ migrate(
                     }
                 }
             ],
-            "indexes": [],
+            "indexes": [
+                "CREATE INDEX `idx_uploads_workspace` ON `uploads` (`workspace`)"
+            ],
             "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
             "viewRule": "",
             "createRule": "@request.auth.id != \"\"",
@@ -1521,7 +1588,9 @@ migrate(
                     }
                 }
             ],
-            "indexes": [],
+            "indexes": [
+                "CREATE INDEX `idx_file_trash_workspace` ON `file_trash` (`workspace`)"
+            ],
             "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
             "viewRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
             "createRule": "@request.auth.id != \"\"",
@@ -1670,7 +1739,8 @@ migrate(
         "1700000010_private_pages_and_collection_scope.js",
         "1700000011_reminders.js",
         "1700000012_user_prefs.js",
-        "1700000013_presence_cursor.js"
+        "1700000013_presence_cursor.js",
+        "1700000014_missing_fields_and_indexes.js"
     ];
     var stamp = Date.now() * 1000;
     for (var m = 0; m < later.length; m++) {
