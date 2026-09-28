@@ -22,12 +22,23 @@ export function extractPageLinks(doc: unknown): string[] {
   return [...out];
 }
 
+const linkCache = new WeakMap<object, string[]>();
+function linksOf(doc: unknown): string[] {
+  if (!doc || typeof doc !== 'object') return extractPageLinks(doc);
+  let links = linkCache.get(doc);
+  if (!links) {
+    links = extractPageLinks(doc);
+    linkCache.set(doc, links);
+  }
+  return links;
+}
+
 // pageId -> the live, non-trashed pages it links to (deduped, self-link dropped).
 export function buildLinkGraph(pages: Record<string, Page>, encLinks: Record<string, string[]>): Map<string, string[]> {
   const adj = new Map<string, string[]>();
   for (const p of Object.values(pages)) {
     if (p.trashed) continue;
-    const raw = isEnvelope(p.content) ? (encLinks[p.id] ?? []) : extractPageLinks(p.content);
+    const raw = isEnvelope(p.content) ? (encLinks[p.id] ?? []) : linksOf(p.content);
     const seen = new Set<string>();
     const valid: string[] = [];
     for (const t of raw) {

@@ -5523,5 +5523,33 @@ await testAsync('keyset: loadAllByKeyset reads every page, and stops on a short 
   eq(stuck.length, KEYSET_PAGE * 2, 'and keeps what it read');
 });
 
+test('selectChildren from the index matches a full scan, trashed and order included', () => {
+  const pages: Record<string, Page> = {};
+  for (let i = 0; i < 300; i++) {
+    const id = 'p' + i;
+    pages[id] = { id, title: id, icon: '', parent: i < 10 ? '' : 'p' + (i % 10), order: (i * 7) % 13, content: null, trashed: i % 17 === 0 } as unknown as Page;
+  }
+  const scan = (parent: string) => Object.values(pages).filter((p) => p.parent === parent && !p.trashed).sort((a, b) => a.order - b.order).map((p) => p.id).join();
+  for (const parent of ['', 'p1', 'p4', 'p9', 'nope']) eq(selectChildren(pages, parent).map((p) => p.id).join(), scan(parent), `children of "${parent}"`);
+  const a = selectChildren(pages, 'p1');
+  a.pop();
+  eq(selectChildren(pages, 'p1').map((p) => p.id).join(), scan('p1'), 'a caller changing its copy leaves the index alone');
+  const next = { ...pages, p55: { ...pages.p55, parent: 'p2' } };
+  ok(selectChildren(next, 'p2').some((p) => p.id === 'p55'), 'a new pages map is indexed afresh');
+});
+
+test('unfiled and link scans re-read a page whose body changed, and only then', () => {
+  const doc = (to: string) => ({ type: 'doc', content: [{ type: 'pageRef', attrs: { pageId: to } }] });
+  const base: Record<string, Page> = {
+    a: { id: 'a', title: 'a', icon: '', parent: '', order: 0, workspace: 'w', content: doc('x') } as unknown as Page,
+    x: { id: 'x', title: 'x', icon: '', parent: 'gone', order: 0, workspace: 'w', content: null } as unknown as Page,
+  };
+  eq(selectUnfiledPages(base, 'w', 'w').length, 0, 'x is reachable through a link, so not unfiled');
+  const edited = { ...base, a: { ...base.a, content: doc('elsewhere') } };
+  eq(selectUnfiledPages(edited, 'w', 'w').map((p) => p.id).join(), 'x', 'once the link is gone from the new body, x is unfiled');
+  eq(outboundOf(buildLinkGraph(base, {}), 'a').join(), 'x', 'the graph follows the old body');
+  eq(outboundOf(buildLinkGraph(edited, {}), 'a').join(), '', 'and the new one');
+});
+
 console.log(`\n${passed}/${passed + failed} passed`);
 if (failed) process.exit(1);

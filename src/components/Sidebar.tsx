@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { ChevronRight, ChevronDown, ChevronsUpDown, Plus, FileText, Trash2, BookOpen, Lock, Users2, Check, Star, Home, Pencil } from 'lucide-react';
 import { useData, selectChildren, selectTopLevel, selectTemplates, selectWorkspacePages } from '../store/useData';
 import { selectUnfiledPages } from '../lib/pageTree';
@@ -90,14 +91,17 @@ export function Sidebar() {
   // Who's on each page right now, so their avatars show beside it in the tree.
   const presence = useWorkspacePresence();
   const [pins, setPins] = useState<Set<string>>(() => loadPins());
-  const togglePin = (id: string) =>
-    setPins((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      savePins(next);
-      return next;
-    });
+  const togglePin = useCallback(
+    (id: string) =>
+      setPins((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        savePins(next);
+        return next;
+      }),
+    [],
+  );
   const pinnedPages = [...pins].map((id) => scoped[id]).filter((p): p is Page => !!p && !p.trashed);
 
   // The per-workspace "home" page: land here when you switch into this workspace.
@@ -110,11 +114,14 @@ export function Sidebar() {
     window.addEventListener(LANDING_EVENT, onChange);
     return () => window.removeEventListener(LANDING_EVENT, onChange);
   }, [activeWorkspaceId]);
-  const toggleLanding = (id: string) => {
-    const next = landingId === id ? null : id; // click the current home again to clear it
-    saveLanding(activeWorkspaceId, next);
-    setLandingId(next);
-  };
+  const toggleLanding = useCallback(
+    (id: string) => {
+      const next = landingId === id ? null : id; // click the current home again to clear it
+      saveLanding(activeWorkspaceId, next);
+      setLandingId(next);
+    },
+    [landingId, activeWorkspaceId],
+  );
 
   // If the active page isn't in the active workspace (e.g. after a switch), drop
   // into that workspace's chosen home page, else its first page, so the main view
@@ -247,9 +254,9 @@ export function Sidebar() {
             </p>
           </div>
         ) : (
-          <>
+          <PresenceContext.Provider value={presence}>
             {roots.map((root) => (
-              <TreeNode key={root.id} page={root} depth={0} pinned={pins} onTogglePin={togglePin} landingId={landingId} onSetLanding={toggleLanding} presence={presence} />
+              <TreeNode key={root.id} page={root} depth={0} pinned={pins} onTogglePin={togglePin} landingId={landingId} onSetLanding={toggleLanding} />
             ))}
             {unfiled.length > 0 && (
               <div className="mt-3 border-t border-paper-line pt-2 dark:border-coal-line">
@@ -297,21 +304,27 @@ export function Sidebar() {
                 <Plus className="h-4 w-4" /> New page
               </button>
             )}
-          </>
+          </PresenceContext.Provider>
         )}
       </div>
     </nav>
   );
 }
 
-function TreeNode({
+const PresenceContext = createContext<Map<string, PresenceRecord[]>>(new Map());
+const NO_ONE: PresenceRecord[] = [];
+function RowPresence({ pageId }: { pageId: string }) {
+  const people = useContext(PresenceContext).get(pageId) ?? NO_ONE;
+  return <PagePresence people={people} onJump={jumpToPresence} />;
+}
+
+const TreeNode = memo(function TreeNodeRow({
   page,
   depth,
   pinned,
   onTogglePin,
   landingId,
   onSetLanding,
-  presence,
 }: {
   page: Page;
   depth: number;
@@ -319,10 +332,9 @@ function TreeNode({
   onTogglePin: (id: string) => void;
   landingId: string | null;
   onSetLanding: (id: string) => void;
-  presence: Map<string, PresenceRecord[]>;
 }) {
-  const pages = useData((s) => s.pages);
-  const activePageId = useData((s) => s.activePageId);
+  const children = useData(useShallow((s) => selectChildren(s.pages, page.id)));
+  const isActive = useData((s) => s.activePageId === page.id);
   const setActivePage = useData((s) => s.setActivePage);
   const createPage = useData((s) => s.createPage);
   const trashPage = useData((s) => s.trashPage);
@@ -331,9 +343,7 @@ function TreeNode({
   const [expanded, setExpanded] = useState(depth < 2);
   const [dragOver, setDragOver] = useState(false);
 
-  const children = selectChildren(pages, page.id);
   const hasChildren = children.length > 0;
-  const isActive = activePageId === page.id;
 
   return (
     <div>
@@ -353,7 +363,7 @@ function TreeNode({
           setDragOver(false);
           const draggedId = e.dataTransfer.getData('text/page-id');
           if (draggedId && draggedId !== page.id) {
-            const order = selectChildren(pages, page.id).length;
+            const order = children.length;
             movePage(draggedId, page.id, order);
             setExpanded(true);
           }
@@ -390,7 +400,7 @@ function TreeNode({
         <span className="shrink-0 text-sm leading-none">{pageIconNode(page.icon, <FileText className="h-3.5 w-3.5" />)}</span>
         <span className="min-w-0 flex-1 truncate">{displayTitle(page.title)}</span>
 
-        <PagePresence people={presence.get(page.id) ?? []} onJump={jumpToPresence} />
+        <RowPresence pageId={page.id} />
 
         <button
           type="button"
@@ -448,13 +458,13 @@ function TreeNode({
       {expanded && hasChildren && (
         <div>
           {children.map((child) => (
-            <TreeNode key={child.id} page={child} depth={depth + 1} pinned={pinned} onTogglePin={onTogglePin} landingId={landingId} onSetLanding={onSetLanding} presence={presence} />
+            <TreeNode key={child.id} page={child} depth={depth + 1} pinned={pinned} onTogglePin={onTogglePin} landingId={landingId} onSetLanding={onSetLanding} />
           ))}
         </div>
       )}
     </div>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // WorkspaceSwitcher, active workspace + a dropdown grouped into Private / Shared

@@ -5,10 +5,24 @@
 
 import type { Page, TableData, TableRow } from '../types';
 
+const childIndexes = new WeakMap<Record<string, Page>, Map<string, Page[]>>();
+function childIndex(pages: Record<string, Page>): Map<string, Page[]> {
+  let idx = childIndexes.get(pages);
+  if (idx) return idx;
+  idx = new Map();
+  for (const p of Object.values(pages)) {
+    if (p.trashed) continue;
+    const list = idx.get(p.parent);
+    if (list) list.push(p);
+    else idx.set(p.parent, [p]);
+  }
+  for (const list of idx.values()) list.sort((a, b) => a.order - b.order);
+  childIndexes.set(pages, idx);
+  return idx;
+}
+
 export function selectChildren(pages: Record<string, Page>, parentId: string): Page[] {
-  return Object.values(pages)
-    .filter((p) => p.parent === parentId && !p.trashed)
-    .sort((a, b) => a.order - b.order);
+  return [...(childIndex(pages).get(parentId) ?? [])];
 }
 
 export function selectTopLevel(pages: Record<string, Page>): Page[] {
@@ -72,10 +86,7 @@ export function selectUnfiledPages(
   const reachable = new Set<string>();
   for (const p of Object.values(pages)) {
     if (!inWorkspace(p)) continue;
-    collectReferencedPageIds(p.content, reachable);
-    collectReferencedPageIds(p.mindmap, reachable);
-    collectReferencedPageIds(p.flow, reachable);
-    collectReferencedPageIds(p.kanban, reachable);
+    for (const v of [p.content, p.mindmap, p.flow, p.kanban]) for (const id of referencedPageIds(v)) reachable.add(id);
   }
 
   const out: Page[] = [];
@@ -85,6 +96,19 @@ export function selectUnfiledPages(
     if (!inWorkspace(pages[p.parent])) out.push(p); // parent not a live page here → orphaned top
   }
   return out.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+}
+
+const referencedCache = new WeakMap<object, string[]>();
+function referencedPageIds(value: unknown): string[] {
+  if (!value || typeof value !== 'object') return [];
+  let ids = referencedCache.get(value);
+  if (!ids) {
+    const found = new Set<string>();
+    collectReferencedPageIds(value, found);
+    ids = [...found];
+    referencedCache.set(value, ids);
+  }
+  return ids;
 }
 
 /** Deep-scan a page's rich field for referenced page ids (any `pageId` string:
