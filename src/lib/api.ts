@@ -344,11 +344,14 @@ export const rowsApi = {
   },
   async create(data: RowWrite): Promise<TableRow> {
     const rec = await pb.collection('table_rows').create({
+      ...(data.id ? { id: data.id } : {}),
       table: data.table ?? '',
       ...(data.workspace ? { workspace: data.workspace } : {}),
       parent: data.parent ?? '',
       cells: data.cells ?? {},
       position: data.position ?? 0,
+      ...(data.content !== undefined && data.content !== null ? { content: data.content } : {}),
+      ...(data.reactions ? { reactions: data.reactions } : {}),
     });
     return toRow(rec);
   },

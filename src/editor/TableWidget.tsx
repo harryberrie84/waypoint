@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { useData, selectRowsForTable, stableRowKey } from '../store/useData';
 import { useMembers } from '../hooks/useMembers';
-import { toastWithAction } from '../store/useToast';
 import type { Column, TableData, TableRow } from '../types';
 import { cellDisplay } from './CustomCardBlock';
 import { initials, avatarColor } from '../lib/avatar';
@@ -262,13 +261,8 @@ function WidgetBody({
     setRolled(pick?.id ?? null);
   };
 
-  const removeRow = (row: TableRow, title: string) => {
-    const cells = { ...row.cells };
+  const removeRow = (row: TableRow) => {
     void deleteRow(row.id);
-    toastWithAction(`Removed ${title || `the ${spec.noun}`}`, {
-      label: 'Undo',
-      run: () => void addRow(tableId, cells),
-    });
   };
 
   const nextTurn = () => {
@@ -456,7 +450,7 @@ function WidgetBody({
         {editable && (
           <button
             type="button"
-            onClick={() => removeRow(row, title)}
+            onClick={() => removeRow(row)}
             className="rounded-md p-1.5 text-ink-faint hover:text-rose-500 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 dark:text-coal-soft"
             title="Remove"
             aria-label={`Remove ${title || spec.noun}`}

@@ -156,7 +156,7 @@ function insertPoll(editor: Editor, range: Range) {
     .createTablePreset('poll')
     .then((tableId) => {
       if (!tableId) return spot.release();
-      for (const r of selectRowsForTable(useData.getState().rows, tableId)) void useData.getState().deleteRow(r.id);
+      for (const r of selectRowsForTable(useData.getState().rows, tableId)) void useData.getState().deleteRow(r.id, { quiet: true });
       spot.insert({ type: 'pollBlock', attrs: { tableId, mode: 'single' } });
     });
 }

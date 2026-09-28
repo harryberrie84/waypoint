@@ -737,7 +737,7 @@ import {
   saveMoveSnapshot, loadMoveSnapshot, clearMoveSnapshot, savePendingMove, loadPendingMove, type MoveSnapshot,
 } from '../lib/turnIntoWorkspace';
 import { useWorkspaceKeys } from './useWorkspaceKeys';
-import { toast } from './useToast';
+import { toast, toastWithAction } from './useToast';
 import { beginProseWrite, endProseWrite, reconcileProseEcho, resetProseWrites, beginWrite, endWrite, isWriting, isStaleRecord, keepPendingFields } from '../lib/proseSync';
 import { loadLastPage, loadLanding } from '../lib/landing';
 import { fetchRates, setRates, ratesAreStale } from '../lib/fx';
@@ -1084,7 +1084,8 @@ interface DataState {
   addRow: (tableId: string, initialCells?: Record<string, CellValue>, parentId?: string) => Promise<string | null>;
   addSubRow: (parentRowId: string) => Promise<string | null>;
   setRowParent: (rowId: string, parentId: string) => void;
-  deleteRow: (rowId: string) => Promise<void>;
+  deleteRow: (rowId: string, opts?: { quiet?: boolean }) => Promise<TableRow[]>;
+  restoreRows: (rows: TableRow[]) => Promise<boolean>;
   setCell: (rowId: string, columnId: string, value: CellValue) => void;
   // Replace encrypted row cells in memory with their decrypted object (computed by
   // the workspace-key store). In-memory only; never persisted.
@@ -4454,7 +4455,7 @@ export const useData = create<DataState>((set, get) => ({
     let columnsChanged = false;
     if (replace) {
       const existing = Object.values(get().rows).filter((r) => r.table === tableId).map((r) => r.id);
-      for (const id of existing) await get().deleteRow(id);
+      for (const id of existing) await get().deleteRow(id, { quiet: true });
 
       const headerSet = new Set(parsed.headers.map((h) => h.trim().toLowerCase()).filter(Boolean));
       const cur = get().tables[tableId];
@@ -4529,7 +4530,7 @@ export const useData = create<DataState>((set, get) => ({
     // Undo of a replace-import: wipe the just-imported rows, put the old columns
     // + view back (guarded write, like the import), then re-add the old rows.
     const current = Object.values(get().rows).filter((r) => r.table === tableId).map((r) => r.id);
-    for (const id of current) await get().deleteRow(id);
+    for (const id of current) await get().deleteRow(id, { quiet: true });
     set((s) => {
       const t = s.tables[tableId];
       return t ? { tables: { ...s.tables, [tableId]: { ...t, columns: snap.columns, views: snap.views } } } : s;
@@ -4799,21 +4800,78 @@ export const useData = create<DataState>((set, get) => ({
     });
   },
 
-  deleteRow: async (rowId) => {
-    const snapshot = get().rows[rowId];
+  deleteRow: async (rowId, opts) => {
+    const root = get().rows[rowId];
+    if (!root) return [];
+    const all = Object.values(get().rows).filter((r) => r.table === root.table);
+    const subtree: TableRow[] = [root];
+    for (let i = 0; i < subtree.length; i++) {
+      for (const r of all) if (r.parent === subtree[i].id && !subtree.includes(r)) subtree.push(r);
+    }
+    const ids = new Set(subtree.map((r) => r.id));
     set((s) => {
       const rows = { ...s.rows };
-      delete rows[rowId];
+      for (const id of ids) delete rows[id];
       return { rows };
     });
-    // rowDeleted flows run on the pre-delete snapshot, not inside another flow.
-    if (snapshot && !automationRunning) runRowDeletedFlows(get, snapshot.table, rowId, snapshot.cells);
-    try {
-      await rowsApi.remove(rowId);
-    } catch (err) {
-      console.error('[data] deleteRow failed', err);
-      if (snapshot) set((s) => ({ rows: { ...s.rows, [rowId]: snapshot } }));
+    if (!automationRunning) for (const r of subtree) runRowDeletedFlows(get, r.table, r.id, r.cells);
+    const removed: TableRow[] = [];
+    for (const r of [...subtree].reverse()) {
+      try {
+        await rowsApi.remove(r.id);
+        removed.push(r);
+      } catch (err) {
+        console.error('[data] deleteRow failed', err);
+        set((s) => ({ rows: { ...s.rows, [r.id]: r } }));
+      }
     }
+    const gone = subtree.filter((r) => removed.includes(r));
+    if (!opts?.quiet && gone.length) {
+      const extra = gone.length - 1;
+      toastWithAction(extra > 0 ? `Removed a row and ${extra} ${extra === 1 ? 'sub-row' : 'sub-rows'}` : 'Removed a row', {
+        label: 'Undo',
+        run: () => void get().restoreRows(gone),
+      });
+    }
+    return gone;
+  },
+
+  restoreRows: async (snapshots) => {
+    const byId = new Set(snapshots.map((r) => r.id));
+    const ordered: TableRow[] = [];
+    const placed = new Set<string>();
+    while (ordered.length < snapshots.length) {
+      const next = snapshots.filter((r) => !placed.has(r.id) && (!byId.has(r.parent) || placed.has(r.parent)));
+      if (!next.length) break;
+      for (const r of next) {
+        ordered.push(r);
+        placed.add(r.id);
+      }
+    }
+    for (const r of ordered) {
+      const ws = r.workspace ?? get().tables[r.table]?.workspace ?? '';
+      const cols = get().tables[r.table]?.columns ?? [];
+      const cells = r.cellsEnc ? { ...r.cells, [ENC_KEY]: r.cellsEnc } : await cellsToPersist(ws, r.cells, cols);
+      let content: object | string | null = r.contentEnc ?? r.content ?? null;
+      if (!r.contentEnc && r.content && useWorkspace.getState().encryptedEnabled(ws) && encryptRowBodiesEnabled()) {
+        content = await useWorkspaceKeys.getState().encryptForWorkspace(ws, r.content);
+      }
+      if (cells == null || content === undefined || (r.content && content == null)) {
+        toast('Could not put the row back while this workspace is locked. Unlock it and try again.', 'error');
+        return false;
+      }
+      try {
+        noteOwnCellsEnvelope(r.id, cells);
+        if (typeof content === 'string') noteOwnRowBodyEnvelope(r.id, content);
+        await rowsApi.create({ id: r.id, table: r.table, workspace: ws || undefined, parent: r.parent, cells, position: r.position, content, reactions: r.reactions ?? null });
+        set((s) => ({ rows: { ...s.rows, [r.id]: r } }));
+      } catch (err) {
+        console.error('[data] restoreRows failed', err);
+        toast('Could not put the row back.', 'error');
+        return false;
+      }
+    }
+    return true;
   },
 
   setCell: (rowId, columnId, value) => {
