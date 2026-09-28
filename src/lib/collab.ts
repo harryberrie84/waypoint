@@ -8,6 +8,7 @@ import { isEmptyDoc } from './doc';
 import { compactCount } from './collabCompact';
 import { uid } from './id';
 import { useWorkspaceKeys } from '../store/useWorkspaceKeys';
+import { SealedDocStore, sealedDocName, localDatabaseNames, deleteDatabase } from './sealedDoc';
 
 // True when the shared doc holds no real content: no nodes, or only blank
 // paragraphs. Used to decide seeding. A bare `fragment.length === 0` missed a doc
@@ -67,7 +68,8 @@ function localPersistEnabled(): boolean {
 // this the stale local doc loads, the server looks empty, and connect() pushes the
 // old state back up instead of reseeding, which re-lost images added via a tab.
 // Best-effort; resolves even if an open connection elsewhere blocks the delete.
-export function clearLocalPageDoc(pageId: string): Promise<void> {
+export async function clearLocalPageDoc(pageId: string): Promise<void> {
+  await deleteDatabase(sealedDocName(pageId));
   return new Promise((resolve) => {
     try {
       if (typeof indexedDB === 'undefined') return resolve();
@@ -132,6 +134,7 @@ export class PageCollab {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private snapTimer: ReturnType<typeof setTimeout> | null = null;
   private idb: IndexeddbPersistence | null = null; // local-first persistence (phase 1)
+  private sealed: SealedDocStore | null = null;
   private lastCompact = 0; // throttle: Date.now() of the last compaction this session
   // False when an existing snapshot could not be loaded (corrupt / key not ready /
   // unfetchable). The log may have been pruned against that snapshot, so our doc
@@ -247,7 +250,16 @@ export class PageCollab {
     // instantly and works offline, surviving a reload. Awaited FIRST, and before
     // the update listener registers, so restored updates aren't re-relayed (the
     // catch-up in syncRelay sends what the server is missing instead).
-    if (localPersistEnabled()) {
+    if (localPersistEnabled() && this.encrypted) {
+      try {
+        const sealed = new SealedDocStore(sealedDocName(this.pageId), this.doc, (b) => this.encode(b), (v) => this.decode(v));
+        await sealed.whenSynced;
+        this.sealed = sealed;
+        await absorbPlainLocalDoc(this.pageId, this.doc, sealed);
+      } catch {
+        this.sealed = null;
+      }
+    } else if (localPersistEnabled()) {
       try {
         this.idb = new IndexeddbPersistence(`wp-page-${this.pageId}`, this.doc);
         await this.idb.whenSynced;
@@ -483,6 +495,7 @@ export class PageCollab {
       }
       this.onlineHandler = null;
     }
+    if (this.sealed) this.sealed.destroy();
     // Close the IndexedDB connection but keep the persisted data (that's the point).
     if (this.idb) {
       try {
@@ -502,4 +515,60 @@ export class PageCollab {
     if (this.snapTimer) clearTimeout(this.snapTimer);
     this.doc.destroy();
   }
+}
+
+async function absorbPlainLocalDoc(pageId: string, doc: Y.Doc, sealed: SealedDocStore): Promise<void> {
+  const plain = `wp-page-${pageId}`;
+  const names = await localDatabaseNames();
+  if (names && !names.includes(plain)) return;
+  const legacy = new IndexeddbPersistence(plain, doc);
+  try {
+    await legacy.whenSynced;
+    await sealed.flush();
+    if (await sealed.compact()) {
+      await legacy.clearData();
+      return;
+    }
+  } catch {
+    /* keep the plain copy; nothing is deleted unless its content is sealed first */
+  }
+  await legacy.destroy();
+}
+
+export async function sealPlainPageDocs(encryptedPages: { id: string; workspace: string }[]): Promise<number> {
+  const names = await localDatabaseNames();
+  if (!names) return 0;
+  let sealedCount = 0;
+  for (const p of encryptedPages) {
+    if (!names.includes(`wp-page-${p.id}`)) continue;
+    const doc = new Y.Doc();
+    const seal = async (bytes: Uint8Array) => {
+      try {
+        return (await useWorkspaceKeys.getState().encryptForWorkspace(p.workspace, bytesToB64(bytes))) || null;
+      } catch {
+        return null;
+      }
+    };
+    const unseal = async (value: string) => {
+      try {
+        if (!isEnvelope(value)) return null;
+        const b64 = await useWorkspaceKeys.getState().decryptForWorkspace(p.workspace, value);
+        return typeof b64 === 'string' && b64 ? b64ToBytes(b64) : null;
+      } catch {
+        return null;
+      }
+    };
+    const store = new SealedDocStore(sealedDocName(p.id), doc, seal, unseal);
+    try {
+      await store.whenSynced;
+      await absorbPlainLocalDoc(p.id, doc, store);
+      if (!(await localDatabaseNames())?.includes(`wp-page-${p.id}`)) sealedCount++;
+    } catch {
+      /* leave it for the next unlock */
+    } finally {
+      store.destroy();
+      doc.destroy();
+    }
+  }
+  return sealedCount;
 }

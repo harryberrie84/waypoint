@@ -275,9 +275,28 @@ function Workspace() {
     link.href = isImageIcon(activeWsIcon) ? activeWsIcon.trim() : emojiFavicon(activeWsIcon) || link.dataset.orig;
   }, [activeWsIcon]);
 
+  const vaultStatus = useVault((s) => s.status);
+  const vaultStatusForSeal = vaultStatus;
+  const sealPageCount = useData((s) => Object.keys(s.pages).length);
+  const sealRun = useRef(false);
+  useEffect(() => {
+    if (vaultStatusForSeal !== 'unlocked' || sealRun.current) return;
+    const t = setTimeout(() => {
+      const ws = useWorkspace.getState();
+      const pages = Object.values(useData.getState().pages)
+        .filter((p) => p.workspace && ws.encryptedEnabled(p.workspace))
+        .map((p) => ({ id: p.id, workspace: p.workspace as string }));
+      if (!pages.length) return;
+      sealRun.current = true;
+      void import('./lib/collab').then((m) => m.sealPlainPageDocs(pages)).finally(() => {
+        sealRun.current = false;
+      });
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [vaultStatusForSeal, sealPageCount]);
+
   // Keep encrypted page titles decrypted in the store: re-run when the vault
   // unlocks and (debounced) whenever data changes. No-ops when nothing's encrypted.
-  const vaultStatus = useVault((s) => s.status);
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | null = null;
     const decrypt = () => {
