@@ -7,7 +7,7 @@ const allowed = (r, what) => ok(r.status >= 200 && r.status < 300, `${what}: exp
 
 export const SETUPS = [
   { label: 'every hook, as the Docker image runs', options: {} },
-  { label: 'only the invite hooks, as live runs', options: { onlyHooks: ['invite_email.pb.js', 'invite_claim.pb.js'] } },
+  { label: 'only the invite hooks, as live runs', options: { onlyHooks: ['invite_email.pb.js', 'invite_claim.pb.js', 'fresh_fields.pb.js'] } },
 ];
 
 export default async function () {

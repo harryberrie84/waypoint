@@ -139,6 +139,7 @@ import { appendCapture } from '../src/lib/capture.ts';
 import { STARTERS } from '../src/lib/starters.ts';
 import { buildSearchIndex, searchIndex, bestMatchWord } from '../src/lib/search.ts';
 import { splitCells } from '../src/lib/cellCrypto.ts';
+import { mergeById, mergeCells } from '../src/lib/merge.ts';
 import { buildScope as scopeOf, cellNumber as numberOf, ownFormulaKey, formulaFor, computedCells, queryRows } from '../src/lib/scope.ts';
 import { forecastList, type DayWeather } from '../src/lib/weather.ts';
 import { serializeChecklist, parseChecklist, PACKING_TEMPLATE, READINESS_TEMPLATE } from '../src/lib/checklistIO.ts';
@@ -5658,6 +5659,25 @@ test('sorting and filtering on a formula column use the computed values', () => 
   ok(queryRows(rows, cols, view)[0] === rows[2], 'the original row objects come back, not copies with computed values');
   const filtered = queryRows(rows, cols, { ...view, sorts: [], filters: [{ id: 'f', columnId: 'd', op: 'gt', value: 5 }] } as never);
   eq(filtered.map((r) => r.id).join(''), 'xz', 'filtered by the computed value');
+});
+
+test('two people editing different cells of one row both keep their edit', () => {
+  const server = { name: 'Alice typing', note: '' };
+  const mine = { name: 'old', note: 'Bob writes a note' };
+  eq(mergeCells(server, mine, ['note']), { name: 'Alice typing', note: 'Bob writes a note' }, 'only the cell I changed is written over the server copy');
+  eq(mergeCells({ a: 1, b: 2 }, { a: 1 }, ['b']), { a: 1 }, 'a cell I cleared is removed');
+});
+
+test('two people changing columns at once both keep their change', () => {
+  const base = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }];
+  const ours = [{ id: 'a', name: 'A renamed' }, { id: 'b', name: 'B' }, { id: 'n1', name: 'mine' }];
+  const theirs = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B by them' }, { id: 'c', name: 'C' }, { id: 'n2', name: 'theirs' }];
+  eq(
+    mergeById(base, ours, theirs).map((c) => `${c.id}:${c.name}`).join(),
+    'a:A renamed,b:B by them,n1:mine,n2:theirs',
+    'my rename, their rename, both new columns, and the column I deleted stays deleted',
+  );
+  eq(mergeById(base, base, base.filter((c) => c.id !== 'b')).map((c) => c.id).join(), 'a,c', 'a column they deleted and I did not touch stays deleted');
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);

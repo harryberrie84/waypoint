@@ -153,6 +153,30 @@ function pickActive(workspaces: Workspace[], members: WorkspaceMember[], userId:
   return priv[0]?.id ?? shared[0]?.id ?? workspaces[0]?.id ?? DEFAULT_ID;
 }
 
+const WS_CACHE = (userId: string) => `waypoint:ws-cache:${userId}`;
+interface WorkspaceCache {
+  workspaces: Workspace[];
+  members: WorkspaceMember[];
+  activeWorkspaceId: string;
+  defaultWorkspaceId: string;
+}
+function writeWorkspaceCache(userId: string, c: WorkspaceCache) {
+  try {
+    localStorage.setItem(WS_CACHE(userId), JSON.stringify(c));
+  } catch {
+    return;
+  }
+}
+function readWorkspaceCache(userId: string): WorkspaceCache | null {
+  try {
+    const raw = localStorage.getItem(WS_CACHE(userId));
+    const c = raw ? (JSON.parse(raw) as WorkspaceCache) : null;
+    return c && Array.isArray(c.workspaces) && c.workspaces.length && c.activeWorkspaceId ? c : null;
+  } catch {
+    return null;
+  }
+}
+
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
   workspaces: [],
   members: [],
@@ -205,7 +229,30 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const defaultWorkspaceId = priv[0]?.id ?? active;
       const roster = await buildRoster(seats, active, false);
       set({ workspaces, members: seats, invites, roster, activeWorkspaceId: active, defaultWorkspaceId, usingDefault: false, ready: true });
-    } catch {
+      writeWorkspaceCache(u.id, { workspaces: rows, members: seats, activeWorkspaceId: active, defaultWorkspaceId });
+    } catch (err) {
+      const unreachable = (typeof navigator !== 'undefined' && navigator.onLine === false) || (err as { status?: number })?.status === 0;
+      const cached = unreachable ? readWorkspaceCache(u.id) : null;
+      if (unreachable) {
+        window.addEventListener(
+          'online',
+          () => {
+            void get()
+              .hydrateWorkspaces()
+              .then(() => useData.getState().hydrate());
+          },
+          { once: true },
+        );
+      }
+      if (cached) {
+        const workspaces = cached.workspaces.map((r) => withLocalFlags(r));
+        const roster = await buildRoster(cached.members, cached.activeWorkspaceId, false).catch(() => []);
+        set({
+          workspaces, members: cached.members, invites: [], roster, activeWorkspaceId: cached.activeWorkspaceId,
+          defaultWorkspaceId: cached.defaultWorkspaceId, usingDefault: false, ready: true,
+        });
+        return;
+      }
       // Pre-migration (collections missing or empty): synthesize a default so
       // the app runs unchanged. Names still resolve via the global users list.
       const { ws, member } = syntheticDefault();

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { OfflineBanner } from './components/OfflineBanner';
 import { useAuth } from './store/useAuth';
 import { pb } from './lib/pocketbase';
 import { useData } from './store/useData';
@@ -278,6 +279,11 @@ function Workspace() {
   const vaultStatus = useVault((s) => s.status);
   const vaultStatusForSeal = vaultStatus;
   const sealPageCount = useData((s) => Object.keys(s.pages).length);
+  useEffect(() => {
+    const onRefused = () => toast('A change could not be saved: the server refused it. Reload to see what was kept.', 'error');
+    window.addEventListener('waypoint:save-refused', onRefused);
+    return () => window.removeEventListener('waypoint:save-refused', onRefused);
+  }, []);
   const sealRun = useRef(false);
   useEffect(() => {
     if (vaultStatusForSeal !== 'unlocked' || sealRun.current) return;
@@ -590,6 +596,7 @@ function Workspace() {
         </div>
       )}
       <Toaster />
+      <OfflineBanner />
       <ConfirmDialog />
       <UpdateToast />
       <MobilePageSwitcher />

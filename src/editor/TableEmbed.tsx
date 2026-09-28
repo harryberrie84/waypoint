@@ -191,6 +191,8 @@ export const TableEmbed = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(TableEmbedView);
+    return ReactNodeViewRenderer(TableEmbedView, {
+      stopEvent: ({ event }) => event.type.startsWith('drag') || event.type === 'drop',
+    });
   },
 });

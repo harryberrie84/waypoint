@@ -162,6 +162,65 @@ async function listAllByKeyset(collection: string, sortKey: string, fields?: str
   return sortByKey(records, sortKey);
 }
 
+let saveRouteMissing = false;
+const saveChains = new Map<string, Promise<unknown>>();
+let waitingForNetwork = 0;
+
+export function savesWaitingForNetwork(): number {
+  return waitingForNetwork;
+}
+
+function whenOnline(): Promise<void> {
+  if (typeof navigator === 'undefined' || navigator.onLine !== false) return Promise.resolve();
+  waitingForNetwork++;
+  return new Promise((resolve) =>
+    window.addEventListener(
+      'online',
+      () => {
+        waitingForNetwork--;
+        resolve();
+      },
+      { once: true },
+    ),
+  );
+}
+
+export async function saveFields(collection: string, id: string, patch: Record<string, unknown>): Promise<RecordModel> {
+  const key = `${collection}/${id}`;
+  const run = async (): Promise<RecordModel> => {
+    await whenOnline();
+    if (!saveRouteMissing) {
+      try {
+        return (await pb.send(`/api/waypoint/save/${collection}/${id}`, { method: 'PATCH', body: patch })) as RecordModel;
+      } catch (err) {
+        const e = err as { status?: number; response?: { message?: string } };
+        if (e.status === 404 && /^Not Found\.?$/.test(e.response?.message ?? '')) saveRouteMissing = true;
+        else throw err;
+      }
+    }
+    return pb.collection(collection).update(id, patch);
+  };
+  const guarded = async () => {
+    try {
+      return await run();
+    } catch (err) {
+      const status = (err as { status?: number }).status ?? 0;
+      if (status >= 400 && status < 500 && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('waypoint:save-refused', { detail: { collection, status } }));
+      }
+      throw err;
+    }
+  };
+  const prev = saveChains.get(key) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(guarded);
+  saveChains.set(key, next);
+  try {
+    return await next;
+  } finally {
+    if (saveChains.get(key) === next) saveChains.delete(key);
+  }
+}
+
 export const pagesApi = {
   async list(): Promise<Page[]> {
     const records = await listAllByKeyset('pages', 'order', PAGE_LIST_FIELDS);
@@ -187,7 +246,7 @@ export const pagesApi = {
     return toPage(rec);
   },
   async update(id: string, patch: Partial<Page>): Promise<Page> {
-    const rec = await pb.collection('pages').update(id, patch);
+    const rec = await saveFields('pages', id, patch as Record<string, unknown>);
     return toPage(rec);
   },
   async remove(id: string): Promise<void> {
@@ -318,8 +377,11 @@ export const tablesApi = {
     });
     return toTable(rec);
   },
+  async get(id: string): Promise<TableData> {
+    return toTable(await pb.collection('tables').getOne(id));
+  },
   async update(id: string, patch: Partial<TableData>): Promise<TableData> {
-    const rec = await pb.collection('tables').update(id, patch);
+    const rec = await saveFields('tables', id, patch as Record<string, unknown>);
     return toTable(rec);
   },
   async remove(id: string): Promise<void> {
@@ -355,8 +417,11 @@ export const rowsApi = {
     });
     return toRow(rec);
   },
+  async get(id: string): Promise<TableRow> {
+    return toRow(await pb.collection('table_rows').getOne(id));
+  },
   async update(id: string, patch: RowWrite): Promise<TableRow> {
-    const rec = await pb.collection('table_rows').update(id, patch);
+    const rec = await saveFields('table_rows', id, patch as Record<string, unknown>);
     return toRow(rec);
   },
   async remove(id: string): Promise<void> {
@@ -640,7 +705,7 @@ export const workspacesApi = {
     return toWorkspace(rec);
   },
   async update(id: string, patch: Partial<Workspace>): Promise<Workspace> {
-    const rec = await pb.collection('workspaces').update(id, patch);
+    const rec = await saveFields('workspaces', id, patch as Record<string, unknown>);
     return toWorkspace(rec);
   },
   async remove(id: string): Promise<void> {

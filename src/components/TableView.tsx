@@ -174,6 +174,7 @@ export function TableView({ tableId, embed, bare = false }: { tableId: string; e
           onChange={(e) => renameTable(tableId, e.target.value)}
           className="flex-1 bg-transparent text-sm font-semibold text-ink outline-none placeholder:text-ink-faint dark:text-coal-text"
           placeholder="Table name"
+          maxLength={200}
         />
         <span className="font-mono text-[10px] uppercase tracking-wide text-ink-faint dark:text-coal-soft">
           {shortId(tableId)}

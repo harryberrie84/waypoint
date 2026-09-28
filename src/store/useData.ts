@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { mergeById, mergeCells } from '../lib/merge';
 import { PRESET_TABLE_NAMES } from '../lib/tableWidgets';
 import type {
   Page,
@@ -75,6 +76,17 @@ function resolveAutomations(table: { automations?: Automation[] | null; id: stri
 }
 // Guard so automation-applied writes don't re-trigger automations (no loops).
 let automationRunning = false;
+
+let lastOfflineNotice = 0;
+function offlineOnly(what: string): boolean {
+  if (typeof navigator === 'undefined' || navigator.onLine !== false) return false;
+  const now = Date.now();
+  if (now - lastOfflineNotice > 3000) {
+    lastOfflineNotice = now;
+    toast(`You're offline. ${what} can be made once you're back online; edits to existing things are kept and sent then.`, 'error');
+  }
+  return true;
+}
 
 let lastViewerNotice = 0;
 function viewerOnly(workspaceId?: string, quiet = false): boolean {
@@ -725,7 +737,7 @@ function withLocalReactions(r: TableRow): TableRow {
 function hydrateRow(r: TableRow): TableRow {
   return withLocalReactions(withLocalParent(r));
 }
-import { pagesApi, tablesApi, rowsApi, workspacesApi, workspaceMembersApi, workspaceKeysApi, uploadsApi, fileTrashApi, setUploadWorkspace } from '../lib/api';
+import { pagesApi, tablesApi, rowsApi, workspacesApi, workspaceMembersApi, workspaceKeysApi, uploadsApi, fileTrashApi, setUploadWorkspace, savesWaitingForNetwork } from '../lib/api';
 import { maybeSnapshot } from '../lib/versions';
 import { useWorkspace } from './useWorkspace';
 import { useVault } from './useVault';
@@ -811,13 +823,37 @@ async function dropPageYUpdates(pageId: string): Promise<void> {
 // `columns` array). Every columns writer routes through here so none can bypass the
 // guard. Debounced + collapsed per table (last write wins), matching the optimistic
 // store update each caller already applied.
+const serverColumns = new Map<string, Column[]>();
+const dirtyCells = new Map<string, Set<string>>();
+
 function persistColumns(tableId: string, columns: Column[], label: string): void {
   const seq = beginWrite(tableId, 'columns');
-  debounceWrite(`table-cols-${tableId}`, () => {
-    tablesApi
-      .update(tableId, { columns })
-      .catch((err) => console.error(`[data] ${label} failed`, err))
-      .finally(() => endWrite(tableId, 'columns', seq));
+  debounceWrite(`table-cols-${tableId}`, async () => {
+    const store = useData.getState();
+    const local = store.tables[tableId]?.columns ?? columns;
+    let toSave = local;
+    const base = serverColumns.get(tableId);
+    if (base) {
+      try {
+        toSave = mergeById(base, local, (await tablesApi.get(tableId)).columns);
+      } catch {
+        toSave = local;
+      }
+    }
+    try {
+      await tablesApi.update(tableId, { columns: toSave });
+      serverColumns.set(tableId, toSave);
+      if (toSave !== local) {
+        useData.setState((s) => {
+          const t = s.tables[tableId];
+          return t && t.columns === local ? { tables: { ...s.tables, [tableId]: { ...t, columns: toSave } } } : s;
+        });
+      }
+    } catch (err) {
+      console.error(`[data] ${label} failed`, err);
+    } finally {
+      endWrite(tableId, 'columns', seq);
+    }
   });
 }
 
@@ -1261,6 +1297,63 @@ const writeFns = new Map<string, () => void | Promise<unknown>>();
 // Debounced write that also honours a maxWait: it saves `delay` ms after the last
 // call (save-on-pause), but if a continuous burst runs past `maxWait` it flushes
 // anyway, so a fast typist's text syncs every second or so instead of only on stop.
+const offlineOutbox = new Map<string, () => void | Promise<unknown>>();
+const outboxListeners = new Set<() => void>();
+
+function runWrite(key: string, fn: () => void | Promise<unknown>): Promise<unknown> {
+  if (!pb.authStore.token) return Promise.resolve();
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    offlineOutbox.set(key, fn);
+    for (const l of outboxListeners) l();
+    return Promise.resolve();
+  }
+  return Promise.resolve(fn()).catch(() => undefined);
+}
+
+export function pendingWriteCount(): number {
+  return writeFns.size + offlineOutbox.size + savesWaitingForNetwork();
+}
+
+export function onPendingWritesChange(listener: () => void): () => void {
+  outboxListeners.add(listener);
+  return () => outboxListeners.delete(listener);
+}
+
+export function flushAllWrites(): Promise<unknown> {
+  const running: Promise<unknown>[] = [];
+  for (const [key, fn] of [...writeFns]) {
+    const timer = writeTimers.get(key);
+    if (timer) clearTimeout(timer);
+    writeTimers.delete(key);
+    writeFirstAt.delete(key);
+    writeFns.delete(key);
+    running.push(runWrite(key, fn));
+  }
+  return Promise.allSettled(running);
+}
+
+function replayOutbox() {
+  const items = [...offlineOutbox];
+  offlineOutbox.clear();
+  for (const [, fn] of items) void fn();
+  for (const l of outboxListeners) l();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', replayOutbox);
+  window.addEventListener('pagehide', () => void flushAllWrites());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') void flushAllWrites();
+  });
+  window.addEventListener('beforeunload', (e) => {
+    void flushAllWrites();
+    if (offlineOutbox.size > 0 || savesWaitingForNetwork() > 0) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+}
+
 function debounceWrite(key: string, fn: () => void | Promise<unknown>, delay = 350, maxWait = 0) {
   const existing = writeTimers.get(key);
   if (existing) clearTimeout(existing);
@@ -1273,7 +1366,7 @@ function debounceWrite(key: string, fn: () => void | Promise<unknown>, delay = 3
     } else if (now - first >= maxWait) {
       writeFirstAt.delete(key);
       writeFns.delete(key);
-      void fn();
+      runWrite(key, fn);
       return;
     }
   }
@@ -1283,7 +1376,7 @@ function debounceWrite(key: string, fn: () => void | Promise<unknown>, delay = 3
       writeTimers.delete(key);
       writeFirstAt.delete(key);
       writeFns.delete(key);
-      void fn();
+      runWrite(key, fn);
     }, delay),
   );
 }
@@ -1392,6 +1485,7 @@ export const useData = create<DataState>((set, get) => ({
       // it stores exactly what the server sent, so encrypted content stays
       // ciphertext at rest, decrypted in memory like a live fetch).
       void saveDataset(pb.authStore.record?.id ?? '', { pages, tables, rows });
+      for (const t of tables) serverColumns.set(t.id, t.columns);
     } catch (err) {
       // Fall back to the last cached snapshot ONLY when we are genuinely offline,
       // so the workspace still opens read-only with no signal (the China case). A
@@ -1536,6 +1630,7 @@ export const useData = create<DataState>((set, get) => ({
         else {
           const incoming = withLocalFormKey(toTable(record));
           if (isStaleRecord(s.tables[record.id], incoming)) return s; // out-of-order echo
+          serverColumns.set(record.id, incoming.columns);
           tables[record.id] = keepPendingFields(s.tables[record.id], incoming, ['name', 'columns', 'views', 'automations']);
         }
         return { tables };
@@ -1738,6 +1833,7 @@ export const useData = create<DataState>((set, get) => ({
 
   createPage: async (parentId, activate = true) => {
     if (viewerOnly()) return null;
+    if (offlineOnly('New pages')) return null;
     const siblings = Object.values(get().pages).filter((p) => p.parent === parentId && !p.trashed);
     try {
       const page = await pagesApi.create({
@@ -4268,6 +4364,7 @@ export const useData = create<DataState>((set, get) => ({
 
   createTable: async (name) => {
     if (viewerOnly()) return null;
+    if (offlineOnly('New tables')) return null;
     const colA = uid('c');
     const colB = uid('c');
     const columns: Column[] = [
@@ -4767,6 +4864,7 @@ export const useData = create<DataState>((set, get) => ({
 
   addRow: async (tableId, initialCells, parentId = '') => {
     if (viewerOnly(get().tables[tableId]?.workspace)) return null;
+    if (offlineOnly('New rows')) return null;
     const existing = Object.values(get().rows).filter((r) => r.table === tableId);
     const position = existing.length;
     const autoCells = automationsForRowCreated(resolveAutomations(get().tables[tableId]));
@@ -4937,19 +5035,47 @@ export const useData = create<DataState>((set, get) => ({
     // Guard the cells against their own echo: hold the typed values until this save
     // settles, so a trailing echo can't rewind what was just entered in a cell.
     const seq = beginWrite(rowId, 'cells');
-    debounceWrite(`cell-${rowId}`, () => {
-      void cellsToPersist(ws, nextCells, cols)
-        .then((toStore) => {
-          if (toStore == null) return; // encrypted ws + locked vault: skip, never write plaintext
-          noteOwnCellsEnvelope(rowId, toStore);
-          return rowsApi.update(rowId, { cells: toStore }).catch((err) => {
-            console.error('[data] setCell failed', err);
-            // Offline: don't refetch (it would blank/rewind the cell); just keep the
-            // optimistic value for the session. Offline edits are NOT synced back.
-            if (navigator.onLine) void get().hydrate();
+    const touched = dirtyCells.get(rowId) ?? new Set<string>();
+    touched.add(columnId);
+    dirtyCells.set(rowId, touched);
+    debounceWrite(`cell-${rowId}`, async () => {
+      const changed = [...(dirtyCells.get(rowId) ?? [])];
+      dirtyCells.delete(rowId);
+      const local = get().rows[rowId]?.cells ?? nextCells;
+      let merged = local;
+      try {
+        const fresh = await rowsApi.get(rowId);
+        let serverCells: Record<string, CellValue> | null = fresh.cells;
+        if (fresh.cellsEnc) {
+          const secret = await useWorkspaceKeys.getState().decryptForWorkspace(ws, fresh.cellsEnc);
+          serverCells = secret && typeof secret === 'object' ? { ...fresh.cells, ...(secret as Record<string, CellValue>) } : null;
+        }
+        if (serverCells) merged = mergeCells(serverCells, local, changed);
+      } catch {
+        merged = local;
+      }
+      try {
+        const toStore = await cellsToPersist(ws, merged, cols);
+        if (toStore == null) return;
+        noteOwnCellsEnvelope(rowId, toStore);
+        await rowsApi.update(rowId, { cells: toStore });
+        if (merged !== local) {
+          set((s) => {
+            const row = s.rows[rowId];
+            if (!row) return s;
+            const pending = dirtyCells.get(rowId);
+            const cells = { ...merged };
+            if (pending) for (const k of pending) if (k in row.cells) cells[k] = row.cells[k];
+            return { rows: { ...s.rows, [rowId]: { ...row, cells } } };
           });
-        })
-        .finally(() => endWrite(rowId, 'cells', seq));
+        }
+      } catch (err) {
+        console.error('[data] setCell failed', err);
+        for (const k of changed) (dirtyCells.get(rowId) ?? dirtyCells.set(rowId, new Set()).get(rowId)!).add(k);
+        if (navigator.onLine) void get().hydrate();
+      } finally {
+        endWrite(rowId, 'cells', seq);
+      }
     });
 
     // Fire field-change automations (guarded against recursion).

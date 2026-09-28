@@ -912,6 +912,7 @@ export function PageView({ pageId }: { pageId: string }) {
 
             <input
               value={isEnvelope(page.title) ? '' : page.title}
+              maxLength={200}
               onChange={(e) => renamePage(pageId, e.target.value)}
               readOnly={!editable || (wsEncrypted && vaultStatus !== 'unlocked')}
               placeholder={isEnvelope(page.title) ? '🔒 Locked' : 'Untitled'}

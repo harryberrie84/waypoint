@@ -60,9 +60,20 @@ let ending = false;
 async function endSession(): Promise<void> {
   if (ending) return;
   ending = true;
+  try {
+    const data = await import('./useData');
+    await Promise.race([data.flushAllWrites(), new Promise((r) => setTimeout(r, 3000))]);
+  } catch {
+    /* nothing pending to save */
+  }
   (pb.realtime as unknown as { disconnect: () => void }).disconnect();
   await useVault.getState().lock().catch(() => {});
   await clearDataset();
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('waypoint:ws-cache:')) localStorage.removeItem(k);
+  } catch {
+    /* storage unavailable, nothing cached */
+  }
   pb.authStore.clear();
   window.location.reload();
 }

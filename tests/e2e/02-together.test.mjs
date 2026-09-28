@@ -4,7 +4,7 @@ import { suite, check, eq } from '../harness/runner.mjs';
 
 const SETUPS = [
   { label: 'every hook, as the Docker image runs', options: {} },
-  { label: 'only the invite hooks, as live runs', options: { onlyHooks: ['invite_email.pb.js', 'invite_claim.pb.js'] } },
+  { label: 'only the invite hooks, as live runs', options: { onlyHooks: ['invite_email.pb.js', 'invite_claim.pb.js', 'fresh_fields.pb.js'] } },
 ];
 
 export default async function () {
