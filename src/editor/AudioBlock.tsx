@@ -114,7 +114,7 @@ function AudioView({ node, updateAttributes, editor }: NodeViewProps) {
     return (
       <NodeViewWrapper className="my-3" contentEditable={false}>
         <input ref={inputRef} type="file" accept="audio/*" className="hidden" onChange={(e) => void pick(e.target.files?.[0])} />
-        <div className="rounded-2xl border border-paper-line bg-paper-panel/50 p-3 dark:border-coal-line dark:bg-coal/40">
+        <div className="rounded-xl border border-paper-line bg-paper-panel/40 p-3 dark:border-coal-line dark:bg-coal/40">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-ink-faint dark:text-coal-soft">
             <Music className="h-3.5 w-3.5 text-clay" /> Audio
           </div>
@@ -170,7 +170,7 @@ function AudioView({ node, updateAttributes, editor }: NodeViewProps) {
   return (
     <NodeViewWrapper className="my-3" contentEditable={false}>
       <input ref={inputRef} type="file" accept="audio/*" className="hidden" onChange={(e) => void pick(e.target.files?.[0])} />
-      <div className="rounded-2xl border border-paper-line bg-paper-panel/40 p-3 dark:border-coal-line dark:bg-coal/30">
+      <div className="rounded-xl border border-paper-line bg-paper-panel/40 p-3 dark:border-coal-line dark:bg-coal/40">
         <audio
           ref={audioRef}
           src={src}

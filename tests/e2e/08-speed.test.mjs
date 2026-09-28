@@ -87,7 +87,13 @@ export default async function () {
         for (const n of [20, 40, 60]) {
           const t0 = Date.now();
           await sidebar(page).getByText(`Page ${n}`, { exact: true }).first().click();
-          await waitFor(async () => (await page.locator('.ProseMirror').first().innerText()).includes(`version ${n},`), `Page ${n} text`);
+          try {
+            await waitFor(async () => (await page.locator('.ProseMirror').first().innerText()).includes(`version ${n},`), `Page ${n} text`);
+          } catch (e) {
+            const shown = (await page.locator('.ProseMirror').first().innerText().catch(() => '')).slice(0, 80);
+            const title = await page.locator('main input').first().inputValue().catch(() => '');
+            throw new Error(`${e.message}; the title reads "${title}" and the editor shows "${shown}"`);
+          }
           times.push(Date.now() - t0);
         }
         ok(Math.max(...times) < 2500, `page switches took ${times.join(', ')} ms`);

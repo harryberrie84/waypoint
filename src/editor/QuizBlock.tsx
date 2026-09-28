@@ -95,7 +95,7 @@ function QuizView({ node, updateAttributes, editor }: NodeViewProps) {
 
   return (
     <NodeViewWrapper className="my-3" contentEditable={false}>
-      <div className="overflow-hidden rounded-2xl border border-paper-line bg-paper-panel/30 dark:border-coal-line dark:bg-coal/30">
+      <div className="overflow-hidden rounded-xl border border-paper-line bg-paper-panel/40 dark:border-coal-line dark:bg-coal/40">
         {/* header */}
         <div className="flex items-center gap-3 border-b border-paper-line bg-gradient-to-r from-clay-wash/70 to-transparent px-4 py-3 dark:border-coal-line dark:from-clay/10">
           <HelpCircle className="h-5 w-5 shrink-0 text-clay" />

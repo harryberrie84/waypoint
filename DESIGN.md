@@ -144,9 +144,10 @@ show focus with `focus:border-clay`.
 - Sentence case. "Add stay", not "Add Stay".
 - No em-dashes anywhere, in the UI or in docs. Use a comma, a colon, a full stop
   or a middle dot (`·`) as a separator in meta: "4 nights · 2 left".
-- On-screen text never names a field, a file, a format or a command. Say what the
-  person gets: "Download a copy", not "Export JSON"; "Something went wrong saving
-  this", not "PATCH failed".
+- On-screen text never names an internal field, a source file or a command. Say
+  what the person gets: "Something went wrong saving this", not "PATCH failed".
+  Name a file format only where the person has to produce or pick that format
+  (an import from another app, a spreadsheet export).
 - A real ellipsis in placeholders and in progress text: "Add an item…",
   "Thinking…".
 - Numbers carry their unit: "3 days left", "SEK 1,200".
@@ -154,12 +155,9 @@ show focus with `focus:border-clay`.
 
 ## Known drift to fix when you touch the file
 
-- `rounded-2xl` cards: Gallery, Audio, Setlist, Quiz.
-- Solid `bg-paper` cards with no translucency: SharedTable, SharedMap, File,
-  Bookmark, TierList (which is also the only block with a shadow).
-- Callout colours and hover set with literal hex and `black/5`.
-- Status colours in `red`, `sky` and `violet` (PageLink, RowRef, Weather,
-  GithubCard).
 - Inputs split between `dark:bg-coal` and `dark:bg-coal-panel`; use `coal-panel`.
-- Primary buttons split between `rounded-md` and `rounded-lg`; use `rounded-lg`.
-- Import and export menus that name file formats.
+
+Deliberate exceptions: the callout tint (a user colour, so its hover darkens
+whatever colour was picked), weather icons in sky blue, GitHub's own pull request
+colours on a GitHub card, and solid surfaces on anything that can go full screen
+(a shared map or table).

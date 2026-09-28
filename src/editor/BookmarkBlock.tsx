@@ -81,7 +81,7 @@ function BookmarkView({ node, updateAttributes, editor }: NodeViewProps) {
         href={url}
         target="_blank"
         rel="noreferrer"
-        className="group flex overflow-hidden rounded-xl border border-paper-line bg-paper transition-colors hover:border-clay/50 dark:border-coal-line dark:bg-coal-panel"
+        className="group flex overflow-hidden rounded-xl border border-paper-line bg-paper-panel/40 transition-colors hover:border-clay/50 dark:border-coal-line dark:bg-coal/40"
       >
         <div className="min-w-0 flex-1 p-3">
           <div className="flex items-center gap-1.5 text-sm font-semibold text-ink dark:text-coal-text">

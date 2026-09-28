@@ -414,7 +414,7 @@ export function TierListEditor({
   const bandMin = big ? 'min-h-[92px]' : 'min-h-[68px]';
 
   return (
-    <div className={['overflow-hidden bg-paper dark:bg-coal-panel', bare ? '' : 'rounded-xl border border-paper-line shadow-sm dark:border-coal-line'].join(' ')}>
+    <div className={['overflow-hidden bg-paper dark:bg-coal-panel', bare ? '' : 'rounded-xl border border-paper-line dark:border-coal-line'].join(' ')}>
       <div className="flex items-center gap-2 border-b border-paper-line px-3 py-2 dark:border-coal-line">
         <LayoutGrid className="h-4 w-4 shrink-0 text-clay" />
         {editable ? (

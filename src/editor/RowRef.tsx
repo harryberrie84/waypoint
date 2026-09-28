@@ -41,7 +41,7 @@ function RowRefView({ node }: NodeViewProps) {
           'mx-[1px] inline-flex items-center gap-1 rounded px-1.5 py-[1px] text-[0.92em] font-medium',
           resolved
             ? 'bg-clay-wash text-clay dark:bg-clay/25 dark:text-clay-soft'
-            : 'bg-red-100 text-red-700 line-through dark:bg-red-900/40 dark:text-red-300',
+            : 'bg-rose-500/10 text-rose-500 line-through',
         ].join(' ')}
       >
         <Link2 className="h-3 w-3 shrink-0" />
