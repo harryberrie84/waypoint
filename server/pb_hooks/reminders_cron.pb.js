@@ -49,10 +49,23 @@ cronAdd("reminders", "*/10 * * * *", () => {
       reminderCols: reminderCols,
       personCols: cols.filter((c) => c.type === "person").map((c) => c.id),
       titleCol: cols.length ? cols[0].id : null,
-      owner: t.get("owner"),
+      owner: t.getString("owner"),
+      workspace: t.getString("workspace"),
     };
   });
 
+  // A person cell holds whatever ids the client wrote, so only members of the
+  // table's workspace are mailed; anyone else would be mail on request to any
+  // account on the server.
+  const isMember = (wsId, userId) => {
+    if (!wsId) return false;
+    try {
+      $app.dao().findFirstRecordByFilter("workspace_members", "workspace = {:w} && user = {:u}", { w: wsId, u: String(userId) });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
   const emailFor = (userId) => {
     if (!userId) return null;
     let user;
@@ -84,9 +97,13 @@ cronAdd("reminders", "*/10 * * * *", () => {
         m.personCols.forEach((pid) => {
           const v = cells[pid];
           const ids = Array.isArray(v) ? v : v ? [v] : [];
-          ids.forEach((id) => { const e = emailFor(id); if (e) recipients[e] = true; });
+          ids.forEach((id) => {
+            if (!isMember(m.workspace, id)) return;
+            const e = emailFor(id);
+            if (e) recipients[e] = true;
+          });
         });
-        if (Object.keys(recipients).length === 0) {
+        if (Object.keys(recipients).length === 0 && isMember(m.workspace, m.owner)) {
           const e = emailFor(m.owner);
           if (e) recipients[e] = true;
         }

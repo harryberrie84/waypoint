@@ -35,12 +35,32 @@ onRecordAfterCreateRequest((e) => {
   const body = esc(record.getString("body").slice(0, 500));
   const pageId = record.get("page");
 
+  // Only people in the page's workspace are told. The mentions list is whatever
+  // the client sent, and without this any signed-in account could have the server
+  // email any user id it liked from a page of its own.
+  let wsId = "";
+  try {
+    wsId = $app.dao().findRecordById("pages", pageId).getString("workspace");
+  } catch (_) {
+    return;
+  }
+  if (!wsId) return;
+  const isMember = (uid) => {
+    try {
+      $app.dao().findFirstRecordByFilter("workspace_members", "workspace = {:w} && user = {:u}", { w: wsId, u: uid });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
   // De-duplicate ids.
   const seen = {};
   mentions.forEach((rawId) => {
     const uid = String(rawId);
     if (!uid || seen[uid]) return;
     seen[uid] = true;
+    if (uid === record.getString("author") || !isMember(uid)) return;
 
     let user;
     try {

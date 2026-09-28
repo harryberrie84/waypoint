@@ -34,8 +34,16 @@ routerAdd(
     if (!m) return c.json(400, { message: "url must be http or https" });
     const authority = m[2];
     if (authority.indexOf("@") !== -1) return c.json(400, { message: "url must not carry credentials" });
-    const host = authority.split(":")[0];
-    if (isPrivateHost(host)) return c.json(400, { message: "that address is not reachable from here" });
+    // An IPv6 literal is bracketed, so splitting on ":" left "[" as the host, which
+    // no check matched: http://[::1]:8090/ went straight through. Refused outright,
+    // like a trailing-dot name (localhost.) and any numeric host that is not a
+    // plain dotted quad (127.1, 2130706433, 0x7f.0.0.1, 0177.0.0.1 all reach
+    // loopback through the system resolver).
+    if (authority.charAt(0) === "[") return c.json(400, { message: "that address is not reachable from here" });
+    const host = authority.split(":")[0].toLowerCase();
+    if (/\.$/.test(host) || isOddNumericHost(host) || isPrivateHost(host)) {
+      return c.json(400, { message: "that address is not reachable from here" });
+    }
 
     let res;
     try {
@@ -69,6 +77,16 @@ routerAdd(
     return c.json(200, meta);
 
     // --- helpers ---------------------------------------------------------------
+    function isOddNumericHost(h) {
+      if (/^0x/i.test(h) || /\.0x/i.test(h)) return true;
+      if (!/^[0-9.]+$/.test(h)) return false;
+      const parts = h.split(".");
+      if (parts.length !== 4) return true;
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i] === "" || (parts[i].length > 1 && parts[i].charAt(0) === "0") || Number(parts[i]) > 255) return true;
+      }
+      return false;
+    }
     function isPrivateHost(host) {
       const h = host.toLowerCase();
       if (!h) return true;

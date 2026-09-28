@@ -9,8 +9,7 @@
 // subscribed calendar updates whenever you edit the trip.
 //
 // Targets PocketBase 0.22.x (the version Waypoint runs on): routerAdd + the
-// $app.dao() API. The feed is unauthenticated, treat the URL like a secret
-// (same model as Google Calendar's private-address links).
+// $app.dao() API. Signed-in members of the table's workspace only (see below).
 //
 // Every helper below lives INSIDE the handler on purpose. PocketBase evaluates
 // each hook in its own isolated runtime, so a function declared at file scope is
@@ -26,6 +25,24 @@ routerAdd("GET", "/ics/table/:id", (c) => {
   } catch (_) {
     return c.string(404, "table not found");
   }
+
+  // Members of the table's workspace only. The feed used to be open to anyone
+  // holding a table id, which was harmless only because it always came out empty
+  // (it read JSON fields as bytes). A calendar app cannot sign in, so a
+  // subscribable feed needs a per-table secret of its own; until one exists this
+  // stays behind the account, like every other read.
+  const authRecord = c.get("authRecord");
+  const ws = table.getString("workspace");
+  let member = false;
+  if (authRecord && ws) {
+    try {
+      $app.dao().findFirstRecordByFilter("workspace_members", "workspace = {:w} && user = {:u}", { w: ws, u: authRecord.id });
+      member = true;
+    } catch (_) {
+      member = false;
+    }
+  }
+  if (!member) return c.string(404, "table not found");
 
   const columns = asArray(table.getString("columns"));
   const view = asObject(table.getString("views"));
@@ -150,4 +167,4 @@ routerAdd("GET", "/ics/table/:id", (c) => {
     ];
     return head.concat(events).concat(["END:VCALENDAR"]).join("\r\n");
   }
-});
+}, $apis.requireRecordAuth());
