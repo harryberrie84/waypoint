@@ -13,6 +13,7 @@ import type { Workspace, WorkspaceMember, WorkspaceInvite } from '../src/types.t
 import { attachmentOf, geoOf, cellText, matchFilter, groupRows, rowColor, rowTitle, type ColorRule } from '../src/lib/tableQuery.ts';
 import { parseDelimited, planImport } from '../src/lib/csv.ts';
 import { parseLocaleNumber } from '../src/lib/number.ts';
+import { sortByKey, loadAllByKeyset, KEYSET_PAGE } from '../src/lib/keyset.ts';
 import { isEmptyDoc, hasWidgetBlock, extractTableIds, remapTableIds, setImageThreadId } from '../src/lib/doc.ts';
 import { derivePlacePins, placeTablesForWorkspace, placeRowCells, nextSourceColor, SOURCE_COLORS } from '../src/lib/mapPins.ts';
 import { gridsByPage } from '../src/lib/grids.ts';
@@ -5490,6 +5491,36 @@ test('fxBoard: rate lines read in both directions, and age is coarse', () => {
   eq(describeAge(1000, 1000), 'updated just now', 'fresh');
   eq(describeAge(1, 1 + 3 * 3600_000), 'updated 3 h ago', 'hours');
   eq(describeAge(1, 1 + 50 * 3600_000), 'updated 2 days ago', 'days');
+});
+
+test('keyset: sortByKey restores the server order, ids breaking ties', () => {
+  const rows = [
+    { id: 'c', position: 2 }, { id: 'a', position: 10 }, { id: 'b', position: 2 }, { id: 'd', position: 0 },
+  ];
+  eq(sortByKey(rows, 'position').map((r) => r.id).join(''), 'dbca', 'numbers compare as numbers (10 after 2), equal ones by id');
+  const t = [{ id: 'y', created: '2026-01-02 10:00:00.000Z' }, { id: 'x', created: '2026-01-02 10:00:00.000Z' }, { id: 'z', created: '2025-12-31 09:00:00.000Z' }];
+  eq(sortByKey(t, 'created').map((r) => r.id).join(''), 'zxy', 'timestamps compare as text, equal ones by id');
+  eq(sortByKey([{ id: 'b' }, { id: 'a', order: 1 }], 'order').map((r) => r.id).join(''), 'ba', 'a missing key sorts first');
+  eq(rows.map((r) => r.id).join(''), 'cabd', 'the input is left as it was');
+});
+
+await testAsync('keyset: loadAllByKeyset reads every page, and stops on a short or stuck one', async () => {
+  const all = Array.from({ length: KEYSET_PAGE * 2 + 7 }, (_, i) => ({ id: String(i).padStart(6, '0') }));
+  const asked: string[] = [];
+  const got = await loadAllByKeyset(async (after) => {
+    asked.push(after);
+    return all.filter((r) => r.id > after).slice(0, KEYSET_PAGE);
+  });
+  eq(got.length, all.length, 'every row, once');
+  eq(new Set(got.map((r) => r.id)).size, all.length, 'no repeats');
+  eq(asked.length, 3, 'three requests for two full pages and a short one');
+  let calls = 0;
+  const stuck = await loadAllByKeyset(async () => {
+    calls++;
+    return all.slice(0, KEYSET_PAGE);
+  });
+  eq(calls, 2, 'a page that does not move forward ends the load instead of looping');
+  eq(stuck.length, KEYSET_PAGE * 2, 'and keeps what it read');
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);

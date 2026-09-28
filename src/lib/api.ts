@@ -1,6 +1,7 @@
 import { pb } from './pocketbase';
 import { normalizeEmail } from './workspace';
 import { isEnvelope } from './crypto';
+import { KEYSET_PAGE, loadAllByKeyset, sortByKey } from './keyset';
 import type {
   Page,
   TableData,
@@ -145,9 +146,25 @@ function toPresence(r: RecordModel): PresenceRecord {
 
 // --- Pages ------------------------------------------------------------------
 
+// Every record of a collection the signed-in user can read, by keyset (see
+// lib/keyset.ts for why), then in `sortKey` order as the page-number list had it.
+async function listAllByKeyset(collection: string, sortKey: string): Promise<RecordModel[]> {
+  const records = await loadAllByKeyset((after) =>
+    pb
+      .collection(collection)
+      .getList(1, KEYSET_PAGE, {
+        sort: 'id',
+        skipTotal: true,
+        ...(after ? { filter: pb.filter('id > {:after}', { after }) } : {}),
+      })
+      .then((r) => r.items),
+  );
+  return sortByKey(records, sortKey);
+}
+
 export const pagesApi = {
   async list(): Promise<Page[]> {
-    const records = await pb.collection('pages').getFullList({ sort: 'order' });
+    const records = await listAllByKeyset('pages', 'order');
     return records.map(toPage);
   },
   async create(data: Partial<Page>): Promise<Page> {
@@ -289,7 +306,7 @@ export const versionsApi = {
 
 export const tablesApi = {
   async list(): Promise<TableData[]> {
-    const records = await pb.collection('tables').getFullList({ sort: 'created' });
+    const records = await listAllByKeyset('tables', 'created');
     return records.map(toTable);
   },
   async create(data: Partial<TableData>): Promise<TableData> {
@@ -325,7 +342,7 @@ type RowWrite = Partial<Omit<TableRow, 'cells' | 'content'>> & {
 
 export const rowsApi = {
   async list(): Promise<TableRow[]> {
-    const records = await pb.collection('table_rows').getFullList({ sort: 'position' });
+    const records = await listAllByKeyset('table_rows', 'position');
     return records.map(toRow);
   },
   async create(data: RowWrite): Promise<TableRow> {
