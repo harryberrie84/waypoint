@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { pb } from '../lib/pocketbase';
 import { useVault } from './useVault';
 import { LANDING_EVENT } from '../lib/landing';
+import { clearDataset } from '../lib/offlineCache';
 import type { AuthUser } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,27 @@ function messageFromError(err: unknown, fallback: string): string {
   return fallback;
 }
 
+// Everything this tab holds belongs to whoever is signed in on it: the unlocked
+// vault, unwrapped workspace keys, decrypted titles and bodies, the offline copy
+// of the workspace. Clearing each by hand is how one gets missed (the vault used
+// to stay unlocked after a rejected token, and the next account created in that
+// tab published the previous person's public key as its own). So a session ends
+// with the key cache and offline copy deleted, then a reload, and the next person
+// starts from nothing.
+let ending = false;
+async function endSession(): Promise<void> {
+  if (ending) return;
+  ending = true;
+  await useVault.getState().lock().catch(() => {});
+  await clearDataset();
+  pb.authStore.clear();
+  window.location.reload();
+}
+
+// Who this tab's state was loaded for. A different account appearing here (a
+// sign-in in another tab of the same browser) means the state is someone else's.
+let sessionUserId: string | null = null;
+
 export const useAuth = create<AuthState>((set) => ({
   user: currentUser(),
   ready: false,
@@ -64,9 +86,16 @@ export const useAuth = create<AuthState>((set) => ({
   init: () => {
     // Reflect any external token changes into the store.
     pb.authStore.onChange(() => {
-      set({ user: currentUser() });
+      const next = currentUser();
+      if (sessionUserId && next?.id !== sessionUserId) {
+        void endSession();
+        return;
+      }
+      if (next) sessionUserId = next.id;
+      set({ user: next });
     });
     const user = currentUser();
+    sessionUserId = user?.id ?? null;
     set({ user, ready: true });
     // Session restored without a password, try the on-device key cache.
     if (user) {
@@ -95,10 +124,7 @@ export const useAuth = create<AuthState>((set) => ({
           // looks signed in and silently fails every write, with no way to tell
           // from the inside that anything is wrong.
           const status = (err as { status?: number } | null)?.status;
-          if (status === 401 || status === 403) {
-            pb.authStore.clear();
-            set({ user: null });
-          }
+          if (status === 401 || status === 403) void endSession();
         });
     }
   },
@@ -133,7 +159,11 @@ export const useAuth = create<AuthState>((set) => ({
       });
       // Immediately authenticate the freshly-created account.
       await pb.collection('users').authWithPassword(cleanEmail, password);
-      set({ user: currentUser(), busy: false });
+      const user = currentUser();
+      set({ user, busy: false });
+      // Settle the vault for THIS account (a new one has none yet), the same as
+      // sign-in does, rather than leaving whatever state the tab started with.
+      if (user) void useVault.getState().load(user.id);
       return true;
     } catch (err) {
       set({ busy: false, error: messageFromError(err, 'Could not create the account.') });
@@ -166,10 +196,7 @@ export const useAuth = create<AuthState>((set) => ({
   },
 
   logout: () => {
-    // Wipe the in-memory key + on-device cache before dropping the session.
-    useVault.getState().lock();
-    pb.authStore.clear();
-    set({ user: null });
+    void endSession();
   },
 
   clearError: () => set({ error: null }),

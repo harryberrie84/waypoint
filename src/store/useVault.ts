@@ -125,7 +125,9 @@ interface VaultState {
   // rewrites only the password door; the recovery door is never touched.
   rewrapToPassword: (current: RewrapSecret, newPassword: string) => Promise<RewrapResult>;
   tryUnlock: (userId: string, password: string) => Promise<void>;
-  lock: () => void;
+  // Resolves once the on-device key cache is gone, so a caller that reloads
+  // right after cannot outrun the delete.
+  lock: () => Promise<void>;
   clearRecoveryCode: () => void;
   openPanel: () => void;
   closePanel: () => void;
@@ -334,17 +336,17 @@ export const useVault = create<VaultState>((set, get) => ({
     if (get().status === 'locked') await get().unlock(password);
   },
 
-  lock: () => {
+  lock: async () => {
     const { userId, record } = get();
+    set({ master: null, privateKey: null, publicKey: null, status: record ? 'locked' : 'absent', recoveryCode: null });
     if (userId) {
-      void idbDel(cacheKey(userId)).catch(() => {});
       try {
         localStorage.removeItem(cacheKey(userId));
       } catch {
         /* ignore */
       }
+      await idbDel(cacheKey(userId)).catch(() => {});
     }
-    set({ master: null, privateKey: null, publicKey: null, status: record ? 'locked' : 'absent', recoveryCode: null });
   },
 
   clearRecoveryCode: () => set({ recoveryCode: null }),

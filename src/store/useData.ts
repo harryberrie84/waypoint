@@ -1340,14 +1340,14 @@ export const useData = create<DataState>((set, get) => ({
       // Write-through the offline read cache on every good load (best-effort, and
       // it stores exactly what the server sent, so encrypted content stays
       // ciphertext at rest, decrypted in memory like a live fetch).
-      void saveDataset({ pages, tables, rows });
+      void saveDataset(pb.authStore.record?.id ?? '', { pages, tables, rows });
     } catch (err) {
       // Fall back to the last cached snapshot ONLY when we are genuinely offline,
       // so the workspace still opens read-only with no signal (the China case). A
       // failure while ONLINE (a server error, an expired token) still surfaces the
       // error instead of masking it with stale data. The cache is read-only display
       // and is never written back to the server, so it can't overwrite anything.
-      const cached = navigator.onLine ? null : await loadDataset();
+      const cached = navigator.onLine ? null : await loadDataset(pb.authStore.record?.id ?? '');
       if (!cached) {
         set({ loadError: err instanceof Error ? err.message : 'Failed to load workspace', loaded: true });
         return;
