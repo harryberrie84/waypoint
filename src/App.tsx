@@ -201,7 +201,8 @@ function Workspace() {
   // and the page looks stale until a manual refresh. When the tab becomes visible
   // again or the network returns, re-establish the live subscription and refetch
   // IN PLACE, so changes appear on their own, no full page reload. Guarded so it
-  // never clobbers an edit you're mid-typing on the open page.
+  // never clobbers an edit you're mid-typing on the open page. When it runs is
+  // decided below the function.
   useEffect(() => {
     let lastAt = 0;
     let running = false;
@@ -228,17 +229,29 @@ function Workspace() {
         running = false;
       }
     };
+    // Each resync downloads every page, table and row the account can see, so it
+    // runs when the stream can actually have died, not on every glance back at the
+    // tab. A window that only regained focus stayed visible and kept its stream,
+    // so focus alone never resyncs (it used to, on every alt-tab). A tab hidden
+    // for under RESYNC_AFTER_HIDDEN_MS keeps its stream too (the server holds an
+    // idle one for minutes); a network change always resyncs, via `online`.
+    const RESYNC_AFTER_HIDDEN_MS = 30_000;
+    let hiddenAt = document.visibilityState === 'hidden' ? Date.now() : 0;
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void resync();
+      if (document.visibilityState !== 'visible') {
+        hiddenAt = Date.now();
+        return;
+      }
+      const away = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = 0;
+      if (away >= RESYNC_AFTER_HIDDEN_MS) void resync();
     };
     const onResume = () => void resync();
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('online', onResume);
-    window.addEventListener('focus', onResume);
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('online', onResume);
-      window.removeEventListener('focus', onResume);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

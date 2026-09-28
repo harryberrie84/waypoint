@@ -826,6 +826,7 @@ interface DataState {
   pendingWorkspaceMove: { opId: string; label: string } | null;
 
   hydrate: () => Promise<void>;
+  _hydrateOnce: () => Promise<void>; // the body of hydrate; call hydrate instead
   subscribeRealtime: () => Promise<void>;
   unsubscribeRealtime: () => Promise<void>;
   teardown: () => void;
@@ -1315,6 +1316,9 @@ function pbUserId(): string {
 // refresh drops these, so a post-refresh revert restores structure + relations only.
 const moveContentSnaps = new Map<string, { pageId: string; oldContent: unknown }[]>();
 
+let hydrateRunning: Promise<void> | null = null;
+let hydrateQueued: Promise<void> | null = null;
+
 export const useData = create<DataState>((set, get) => ({
   pages: {},
   tables: {},
@@ -1327,7 +1331,28 @@ export const useData = create<DataState>((set, get) => ({
   openRowId: null,
   pageCollabNonce: {},
 
-  hydrate: async () => {
+  // Single-flight. Several things can ask for a full reload at once (a resync and
+  // a failed write, or one failed write per descendant of a trashed subtree), and
+  // each one downloads every page, table and row. Calls that arrive while one is
+  // running share ONE follow-up run that starts after it, so a caller still gets
+  // data read after it asked, never an older snapshot it happened to join.
+  hydrate: () => {
+    if (!hydrateRunning) {
+      hydrateRunning = get()._hydrateOnce().finally(() => {
+        hydrateRunning = null;
+      });
+      return hydrateRunning;
+    }
+    if (!hydrateQueued) {
+      hydrateQueued = hydrateRunning.then(() => {
+        hydrateQueued = null;
+        return get().hydrate();
+      });
+    }
+    return hydrateQueued;
+  },
+
+  _hydrateOnce: async () => {
     let pages: Page[];
     let tables: TableData[];
     let rows: TableRow[];
