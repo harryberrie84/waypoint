@@ -1,5 +1,5 @@
 import { startApp, registerInUi, signInInUi, pickStarter, sidebar, waitFor, settled } from '../harness/browser.mjs';
-import { suite, check, eq } from '../harness/runner.mjs';
+import { suite, check, eq, ok } from '../harness/runner.mjs';
 import { client } from '../harness/api.mjs';
 
 const values = async (page) => page.locator('table tbody input:not([type=checkbox])').evaluateAll((els) => els.map((e) => e.value));
@@ -41,6 +41,28 @@ export default async function () {
           const v = await values(page);
           return v.includes('Ferry tickets') && v.includes('Hostel') && v.some((x) => x.replace(/\s/g, '').startsWith('450'));
         }, 'the typed cells after a reload', 15000);
+      });
+
+    await check('a table lines up with the text around it instead of running past it',
+      'Tables and other blocks were wider than the text column, so a page read as a narrow column with things sticking out to the right. A wide table scrolls inside its own box instead.',
+      async () => {
+        const edges = async () => page.evaluate(() => {
+          const root = document.querySelector('.tiptap');
+          const text = [...root.children].find((c) => c.tagName === 'P' || /^H[1-3]$/.test(c.tagName));
+          const limit = text.getBoundingClientRect().right;
+          const over = [...root.children].filter((c) => c.getBoundingClientRect().right > limit + 1).map((c) => c.className || c.tagName);
+          return { over, pageScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+        });
+        const wide = await edges();
+        eq(wide.over, [], 'blocks past the text column at desktop width');
+        ok(wide.pageScroll <= 0, `the page scrolls sideways by ${wide.pageScroll}px at desktop width`);
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.waitForTimeout(400);
+        const narrow = await edges();
+        eq(narrow.over, [], 'blocks past the text column at phone width');
+        ok(narrow.pageScroll <= 0, `the page scrolls sideways by ${narrow.pageScroll}px at phone width`);
+        await page.setViewportSize({ width: 1400, height: 900 });
+        await page.waitForTimeout(400);
       });
 
     await check('renaming a table sticks',

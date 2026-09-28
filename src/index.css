@@ -269,17 +269,7 @@ input[type='number'] {
 .tiptap > * + * {
   margin-top: 0.75em;
 }
-/* The page column is now wide enough for tables/embeds to breathe. Keep running
-   text at a comfortable measure; block embeds (tables, images, maps, embeds)
-   are left uncapped so they use the full width. */
-.tiptap > p,
-.tiptap > h1,
-.tiptap > h2,
-.tiptap > h3,
-.tiptap > ul,
-.tiptap > ol,
-.tiptap > blockquote,
-.tiptap > pre {
+.tiptap > * {
   max-width: 48rem;
 }
 .tiptap h1 {

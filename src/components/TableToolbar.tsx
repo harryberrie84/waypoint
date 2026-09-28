@@ -123,6 +123,8 @@ export function TableToolbar({
               key={t.type}
               type="button"
               onClick={() => switchType(t.type)}
+              title={t.label}
+              aria-label={t.label}
               className={[
                 'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
                 active
@@ -131,7 +133,7 @@ export function TableToolbar({
               ].join(' ')}
             >
               <Icon className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t.label}</span>
+              {active && <span className="hidden sm:inline">{t.label}</span>}
             </button>
           );
         })}
