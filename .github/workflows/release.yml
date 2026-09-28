@@ -31,7 +31,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: npm run check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run predeploy
 
       # arm64 covers a Pi and the cheap ARM VPS hosts, which is a large share of
       # self-hosters. It builds under emulation, so expect this job to take a

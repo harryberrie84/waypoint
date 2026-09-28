@@ -149,6 +149,27 @@ fails if the two have drifted.
 **PocketBase 0.22.x, not 0.23+.** The server hooks use the 0.22 hook and DAO API,
 which 0.23 renamed.
 
+## Before you deploy
+
+```bash
+npx playwright install --with-deps chromium   # once per machine
+npm run predeploy
+```
+
+`predeploy` runs `npm run check`, then two suites against a throwaway PocketBase
+(downloaded once into `.cache/`) started from this repo's migrations and hooks:
+
+- `npm run test:server`: what the database keeps, who may read and write what
+  (with every hook, and with only the invite hook as a minimal install runs),
+  mail recipients and escaping, the calendar feed, link previews, and complete
+  list loads.
+- `npm run test:e2e`: the built app in Chromium. Signing up, writing and reloading,
+  trash, two people editing one page, invites, sign-out on a shared computer,
+  reconnecting, the `/` menu, tables, comments, and staying quick while others type.
+
+Each check says why it matters when it fails. CI runs the same command on every
+push, and a release tag cannot build an image unless it passes.
+
 ## Project layout
 
 ```

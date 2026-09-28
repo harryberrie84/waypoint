@@ -31,3 +31,6 @@ Thumbs.db
 /notes/
 /scratch/
 *.private.*
+
+/.cache/
+/test-results/

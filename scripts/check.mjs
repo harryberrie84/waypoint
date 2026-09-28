@@ -51,7 +51,7 @@ function checkSourceBytes() {
       }
     }
   };
-  for (const dir of ['src', 'scripts', 'server']) if (existsSync(dir)) walk(dir);
+  for (const dir of ['src', 'scripts', 'server', 'tests']) if (existsSync(dir)) walk(dir);
   return ok;
 }
 
