@@ -2,6 +2,7 @@ import { pb } from './pocketbase';
 import { normalizeEmail } from './workspace';
 import { isEnvelope } from './crypto';
 import { KEYSET_PAGE, loadAllByKeyset, sortByKey } from './keyset';
+import { PAGE_LIST_FIELDS } from './pageFields';
 import type {
   Page,
   TableData,
@@ -146,13 +147,14 @@ function toPresence(r: RecordModel): PresenceRecord {
 
 // --- Pages ------------------------------------------------------------------
 
-async function listAllByKeyset(collection: string, sortKey: string): Promise<RecordModel[]> {
+async function listAllByKeyset(collection: string, sortKey: string, fields?: string): Promise<RecordModel[]> {
   const records = await loadAllByKeyset((after) =>
     pb
       .collection(collection)
       .getList(1, KEYSET_PAGE, {
         sort: 'id',
         skipTotal: true,
+        ...(fields ? { fields } : {}),
         ...(after ? { filter: pb.filter('id > {:after}', { after }) } : {}),
       })
       .then((r) => r.items),
@@ -162,7 +164,7 @@ async function listAllByKeyset(collection: string, sortKey: string): Promise<Rec
 
 export const pagesApi = {
   async list(): Promise<Page[]> {
-    const records = await listAllByKeyset('pages', 'order');
+    const records = await listAllByKeyset('pages', 'order', PAGE_LIST_FIELDS);
     return records.map(toPage);
   },
   async create(data: Partial<Page>): Promise<Page> {

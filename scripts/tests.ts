@@ -14,6 +14,8 @@ import { attachmentOf, geoOf, cellText, matchFilter, groupRows, rowColor, rowTit
 import { parseDelimited, planImport } from '../src/lib/csv.ts';
 import { parseLocaleNumber } from '../src/lib/number.ts';
 import { sortByKey, loadAllByKeyset, KEYSET_PAGE } from '../src/lib/keyset.ts';
+import { PAGE_LIST_FIELDS } from '../src/lib/pageFields.ts';
+import { readFileSync } from 'node:fs';
 import { isEmptyDoc, hasWidgetBlock, extractTableIds, remapTableIds, setImageThreadId } from '../src/lib/doc.ts';
 import { derivePlacePins, placeTablesForWorkspace, placeRowCells, nextSourceColor, SOURCE_COLORS } from '../src/lib/mapPins.ts';
 import { gridsByPage } from '../src/lib/grids.ts';
@@ -5549,6 +5551,12 @@ test('unfiled and link scans re-read a page whose body changed, and only then', 
   eq(selectUnfiledPages(edited, 'w', 'w').map((p) => p.id).join(), 'x', 'once the link is gone from the new body, x is unfiled');
   eq(outboundOf(buildLinkGraph(base, {}), 'a').join(), 'x', 'the graph follows the old body');
   eq(outboundOf(buildLinkGraph(edited, {}), 'a').join(), '', 'and the new one');
+});
+
+test('the pages list asks for every page field but the Yjs snapshot', () => {
+  const schema = JSON.parse(readFileSync(new URL('../pocketbase/schema.json', import.meta.url), 'utf8')) as { name: string; schema: { name: string }[] }[];
+  const want = ['id', 'collectionId', 'collectionName', 'created', 'updated', ...schema.find((c) => c.name === 'pages')!.schema.map((f) => f.name).filter((n) => n !== 'ydoc')];
+  eq([...PAGE_LIST_FIELDS.split(',')].sort().join(), [...want].sort().join(), 'a page field missing here would load as empty and could be saved back empty; add it to lib/pageFields.ts');
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);

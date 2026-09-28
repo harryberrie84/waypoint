@@ -721,6 +721,7 @@ import { appendCapture, appendImage } from '../lib/capture';
 import { isEnvelope, displayTitle } from '../lib/crypto';
 import { splitCells, ENC_KEY } from '../lib/cellCrypto';
 import { saveDataset, loadDataset } from '../lib/offlineCache';
+import { PAGE_LIST_FIELDS } from '../lib/pageFields';
 import { clearLocalPageDoc, markForceSeed } from '../lib/collab';
 import { remapDeep, orderPagesByParent, deadTableRemaps, type BackupFile, type RestoreCounts, type RestoreCreated, type TableSnapshot } from '../lib/restoreBackup';
 import {
@@ -1591,7 +1592,7 @@ export const useData = create<DataState>((set, get) => ({
       const since = new Date(Date.parse(serverWatermark.replace(' ', 'T')) - 60_000).toISOString().replace('T', ' ');
       const opts = { filter: pb.filter('updated >= {:since}', { since }), sort: 'updated,id' };
       const [p, t, r] = await Promise.all([
-        pb.collection('pages').getFullList(opts),
+        pb.collection('pages').getFullList({ ...opts, fields: PAGE_LIST_FIELDS }),
         pb.collection('tables').getFullList(opts),
         pb.collection('table_rows').getFullList(opts),
       ]);
