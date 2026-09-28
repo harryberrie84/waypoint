@@ -125,8 +125,6 @@ interface VaultState {
   // rewrites only the password door; the recovery door is never touched.
   rewrapToPassword: (current: RewrapSecret, newPassword: string) => Promise<RewrapResult>;
   tryUnlock: (userId: string, password: string) => Promise<void>;
-  // Resolves once the on-device key cache is gone, so a caller that reloads
-  // right after cannot outrun the delete.
   lock: () => Promise<void>;
   clearRecoveryCode: () => void;
   openPanel: () => void;

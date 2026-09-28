@@ -716,8 +716,6 @@ export function Editor({ content, editable, onChange, onFocusChange, focusText, 
         if (r.page === pageId && r.thread) void recompute();
       })
       .then((fn) => {
-        // Torn down before the subscription landed: drop it now, or it outlives
-        // the component and keeps firing for a page nobody has open.
         if (!alive) void fn();
         else unsub = fn;
       })

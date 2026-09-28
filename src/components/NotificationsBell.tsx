@@ -66,8 +66,6 @@ export function NotificationsBell() {
       .catch(() => {});
   };
 
-  // Polled, so skip it while the tab is hidden (nobody is looking at the bell)
-  // and catch up the moment it is visible again.
   useEffect(() => {
     load();
     const t = setInterval(() => {

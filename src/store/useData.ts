@@ -827,7 +827,7 @@ interface DataState {
 
   hydrate: () => Promise<void>;
   applyServerChange: (collection: 'pages' | 'tables' | 'table_rows', action: string, record: RecordModel) => void;
-  _hydrateOnce: () => Promise<void>; // the body of hydrate; call hydrate instead
+  _hydrateOnce: () => Promise<void>;
   subscribeRealtime: () => Promise<void>;
   catchUp: () => Promise<void>;
   unsubscribeRealtime: () => Promise<void>;
@@ -1318,8 +1318,6 @@ function pbUserId(): string {
 // refresh drops these, so a post-refresh revert restores structure + relations only.
 const moveContentSnaps = new Map<string, { pageId: string; oldContent: unknown }[]>();
 
-// The newest `updated` stamp seen from the server (a full load or any realtime
-// event). Server time only, so no device clock is ever compared with it.
 let serverWatermark = '';
 const noteServerTime = (updated: unknown) => {
   if (typeof updated === 'string' && updated > serverWatermark) serverWatermark = updated;
@@ -1341,11 +1339,6 @@ export const useData = create<DataState>((set, get) => ({
   openRowId: null,
   pageCollabNonce: {},
 
-  // Single-flight. Several things can ask for a full reload at once (a resync and
-  // a failed write, or one failed write per descendant of a trashed subtree), and
-  // each one downloads every page, table and row. Calls that arrive while one is
-  // running share ONE follow-up run that starts after it, so a caller still gets
-  // data read after it asked, never an older snapshot it happened to join.
   hydrate: () => {
     if (!hydrateRunning) {
       hydrateRunning = get()._hydrateOnce().finally(() => {
@@ -1479,9 +1472,7 @@ export const useData = create<DataState>((set, get) => ({
     }
   },
 
-  // One entry point for a server change to a page, table or row, whether it came
-  // over the realtime stream or from the reconnect catch-up below, so both pass
-  // the same stale-echo and mid-edit guards.
+    // pages
   applyServerChange: (collection, action, record) => {
     noteServerTime(record.updated);
     if (collection === 'pages') {
@@ -1512,6 +1503,7 @@ export const useData = create<DataState>((set, get) => ({
         pages[record.id] = merged;
         return { pages };
       });
+    // tables
     } else if (collection === 'tables') {
       set((s) => {
         const tables = { ...s.tables };
@@ -1525,6 +1517,7 @@ export const useData = create<DataState>((set, get) => ({
         }
         return { tables };
       });
+    // rows
     } else {
       set((s) => {
         const rows = { ...s.rows };
@@ -1591,13 +1584,6 @@ export const useData = create<DataState>((set, get) => ({
     await pb.collection('table_rows').subscribe('*', on('table_rows'));
   },
 
-  // After the realtime stream reconnects, fetch only what changed while it was
-  // down and apply it like any other event. PocketBase 0.22 closes an idle
-  // stream every few minutes and the client reconnects on its own, so this runs
-  // often and must stay cheap: three filtered lists that are usually empty, where
-  // a full reload would download every page, table and row. A minute of overlap
-  // covers writes that landed just before the drop. It cannot see hard deletes
-  // (a trash is an update and is seen); the full resync on return still does.
   catchUp: async () => {
     if (!get().loaded || !serverWatermark || catchUpRunning) return;
     catchUpRunning = true;
@@ -1613,7 +1599,6 @@ export const useData = create<DataState>((set, get) => ({
       for (const rec of t) get().applyServerChange('tables', 'update', rec);
       for (const rec of r) get().applyServerChange('table_rows', 'update', rec);
     } catch {
-      /* the next reconnect, or the full resync on return, tries again */
     } finally {
       catchUpRunning = false;
     }

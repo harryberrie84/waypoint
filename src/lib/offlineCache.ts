@@ -19,9 +19,6 @@ export interface CachedDataset {
   rows: TableRow[];
 }
 
-// The snapshot names the account it was taken for. A browser can be shared, and
-// the next person to sign in must never be shown the last one's workspace just
-// because the network dropped during their first load.
 interface StoredDataset extends CachedDataset {
   owner?: string;
 }
@@ -51,6 +48,5 @@ export async function clearDataset(): Promise<void> {
   try {
     await idbDel(KEY);
   } catch {
-    /* nothing cached, or no IndexedDB */
   }
 }

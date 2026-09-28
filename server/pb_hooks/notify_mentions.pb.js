@@ -16,14 +16,11 @@
 onRecordAfterCreateRequest((e) => {
   const record = e.record;
 
-  // mentions is a JSON field, an array of user ids. Read it with getString:
-  // record.get() hands a JSON field to the JSVM as raw bytes (an array of
-  // numbers), so it never looked like a string and every "id" was a byte.
+  // mentions is a JSON field, usually an array of user ids, but be defensive.
   let mentions = [];
   try { mentions = JSON.parse(record.getString("mentions") || "[]"); } catch (_) { mentions = []; }
   if (!Array.isArray(mentions) || !mentions.length) return;
 
-  // The comment text and author name go into an HTML email, so escape them.
   const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
   const settings = $app.settings();
@@ -35,9 +32,6 @@ onRecordAfterCreateRequest((e) => {
   const body = esc(record.getString("body").slice(0, 500));
   const pageId = record.get("page");
 
-  // Only people in the page's workspace are told. The mentions list is whatever
-  // the client sent, and without this any signed-in account could have the server
-  // email any user id it liked from a page of its own.
   let wsId = "";
   try {
     wsId = $app.dao().findRecordById("pages", pageId).getString("workspace");

@@ -34,11 +34,6 @@ routerAdd(
     if (!m) return c.json(400, { message: "url must be http or https" });
     const authority = m[2];
     if (authority.indexOf("@") !== -1) return c.json(400, { message: "url must not carry credentials" });
-    // An IPv6 literal is bracketed, so splitting on ":" left "[" as the host, which
-    // no check matched: http://[::1]:8090/ went straight through. Refused outright,
-    // like a trailing-dot name (localhost.) and any numeric host that is not a
-    // plain dotted quad (127.1, 2130706433, 0x7f.0.0.1, 0177.0.0.1 all reach
-    // loopback through the system resolver).
     if (authority.charAt(0) === "[") return c.json(400, { message: "that address is not reachable from here" });
     const host = authority.split(":")[0].toLowerCase();
     if (/\.$/.test(host) || isOddNumericHost(host) || isPrivateHost(host)) {
@@ -119,8 +114,6 @@ routerAdd(
       }
       return "";
     }
-    // Backslashes doubled: in a string literal "\s" is just "s", which made the
-    // <title> fallback match only titles spelled entirely in the letter s.
     function attr(tag, name) {
       const m = new RegExp(name + '\\s*=\\s*"([^"]*)"', "i").exec(tag) || new RegExp(name + "\\s*=\\s*'([^']*)'", "i").exec(tag);
       return m ? m[1] : "";

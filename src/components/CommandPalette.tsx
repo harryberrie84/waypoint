@@ -83,9 +83,6 @@ export function CommandPalette({ open, onClose, onOpenSettings, onOpenThemes, on
   // Decrypted bodies of encrypted pages, so search can reach their text too.
   const searchBodies = useWorkspaceKeys((s) => s.searchBodies);
   // Rows scoped to the active workspace (those whose table is in this workspace).
-  // The palette is mounted all the time and its hooks run before the `!open`
-  // return, so both of these used to rebuild on every store change, which is
-  // every keystroke in the editor, while nobody was searching. Closed, they skip.
   const scopedRows = useMemo(() => {
     const out: Record<string, TableRow> = {};
     if (!open) return out;

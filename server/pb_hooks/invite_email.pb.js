@@ -52,8 +52,6 @@ onRecordAfterCreateRequest(function (e) {
     }
   } catch (_) { /* keep the generic name */ }
 
-  // The workspace and inviter names are whatever the inviter typed, and they go
-  // into an HTML email to someone else, so escape them (and the address) there.
   var esc = function (v) {
     return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   };

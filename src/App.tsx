@@ -202,8 +202,7 @@ function Workspace() {
   // and the page looks stale until a manual refresh. When the tab becomes visible
   // again or the network returns, re-establish the live subscription and refetch
   // IN PLACE, so changes appear on their own, no full page reload. Guarded so it
-  // never clobbers an edit you're mid-typing on the open page. When it runs is
-  // decided below the function.
+  // never clobbers an edit you're mid-typing on the open page.
   useEffect(() => {
     let lastAt = 0;
     let running = false;
@@ -230,12 +229,6 @@ function Workspace() {
         running = false;
       }
     };
-    // Each resync downloads every page, table and row the account can see, so it
-    // runs when the stream can actually have died, not on every glance back at the
-    // tab. A window that only regained focus stayed visible and kept its stream,
-    // so focus alone never resyncs (it used to, on every alt-tab). A tab hidden
-    // for under RESYNC_AFTER_HIDDEN_MS keeps its stream too (the server holds an
-    // idle one for minutes); a network change always resyncs, via `online`.
     const RESYNC_AFTER_HIDDEN_MS = 30_000;
     let hiddenAt = document.visibilityState === 'hidden' ? Date.now() : 0;
     const onVisible = () => {
@@ -250,9 +243,6 @@ function Workspace() {
     const onResume = () => void resync();
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('online', onResume);
-    // Every (re)connect of the stream, including the one PocketBase forces on an
-    // idle stream every few minutes and the one after a server restart while this
-    // tab sat in front of someone: fetch just what changed meanwhile (catchUp).
     let dropConnect: (() => Promise<void>) | null = null;
     let gone = false;
     void pb.realtime

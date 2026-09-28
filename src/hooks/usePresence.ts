@@ -188,8 +188,6 @@ export function usePresence(
         else scheduleRefresh(); // mode/staleness soon
       })
       .then((fn) => {
-        // Torn down before the subscription landed: drop it now, or it outlives
-        // the component and keeps firing for a page nobody has open.
         if (cancelled) void fn();
         else unsub = fn;
       })
@@ -363,8 +361,6 @@ export function useWorkspacePresence(): Map<string, PresenceRecord[]> {
         rebuild();
       })
       .then((fn) => {
-        // Torn down before the subscription landed: drop it now, or it outlives
-        // the component and keeps firing for a page nobody has open.
         if (cancelled) void fn();
         else unsub = fn;
       })

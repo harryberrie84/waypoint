@@ -56,13 +56,6 @@ function messageFromError(err: unknown, fallback: string): string {
   return fallback;
 }
 
-// Everything this tab holds belongs to whoever is signed in on it: the unlocked
-// vault, unwrapped workspace keys, decrypted titles and bodies, the offline copy
-// of the workspace. Clearing each by hand is how one gets missed (the vault used
-// to stay unlocked after a rejected token, and the next account created in that
-// tab published the previous person's public key as its own). So a session ends
-// with the key cache and offline copy deleted, then a reload, and the next person
-// starts from nothing.
 let ending = false;
 async function endSession(): Promise<void> {
   if (ending) return;
@@ -73,8 +66,6 @@ async function endSession(): Promise<void> {
   window.location.reload();
 }
 
-// Who this tab's state was loaded for. A different account appearing here (a
-// sign-in in another tab of the same browser) means the state is someone else's.
 let sessionUserId: string | null = null;
 
 export const useAuth = create<AuthState>((set) => ({
@@ -161,8 +152,6 @@ export const useAuth = create<AuthState>((set) => ({
       await pb.collection('users').authWithPassword(cleanEmail, password);
       const user = currentUser();
       set({ user, busy: false });
-      // Settle the vault for THIS account (a new one has none yet), the same as
-      // sign-in does, rather than leaving whatever state the tab started with.
       if (user) void useVault.getState().load(user.id);
       return true;
     } catch (err) {
@@ -196,6 +185,7 @@ export const useAuth = create<AuthState>((set) => ({
   },
 
   logout: () => {
+    // Wipe the in-memory key + on-device cache before dropping the session.
     void endSession();
   },
 

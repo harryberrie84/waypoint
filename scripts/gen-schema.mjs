@@ -91,20 +91,12 @@ const ADD_FIELDS = {
   presence: [text('cursor', 5000), text('focus', 200)],
 };
 
-// Four more of the same kind, found by checking every client write against this
-// file (1700000014 adds them to an existing install). `pages.trashed` is the one
-// that hurt: with no field, trashing a page returned 200 and came back on reload,
-// and the 14-day purge never found anything. The other three only ever lived in
-// the browser that set them (a localStorage mirror hid it on that one device).
 ADD_FIELDS.pages.push(bool('trashed'));
 ADD_FIELDS.tables.push(json('views'), json('automations'));
 ADD_FIELDS.workspaces = [text('numberStyle', 20)];
 
-// Indexes on what the client filters by and what the rules join through. Without
-// them every one of these reads scans the whole collection (1700000014 again).
 const idx = (col, field) => `CREATE INDEX \`idx_${col}_${field}\` ON \`${col}\` (\`${field}\`)`;
 const ADD_INDEXES = {
-  // `updated` is what the reconnect catch-up asks by, on every reconnect.
   pages: [idx('pages', 'workspace'), idx('pages', 'parent'), idx('pages', 'updated')],
   tables: [idx('tables', 'workspace'), idx('tables', 'updated')],
   table_rows: [idx('table_rows', 'table'), idx('table_rows', 'workspace'), idx('table_rows', 'updated')],
@@ -156,19 +148,6 @@ const NEW_COLLECTIONS = [
   },
 ];
 
-// --- who may write where ------------------------------------------------------
-// Probed on a PocketBase 0.22 with the rules as they were: a viewer could make
-// themselves admin and delete the owner's membership; anyone could move their own
-// membership row into a workspace whose id they knew (workspace ids are public
-// on every uploaded image) and then read all of it; anyone signed in could create
-// pages, tables, rows, comments, presence, Yjs updates and trash entries in a
-// workspace they are not in. Every rule below is NARROWER than the one it
-// replaces, and 1700000015 applies the same text to an existing install.
-//
-// A record's own fields (workspace, page) in a create rule are the values being
-// created. `@request.data.x:isset = false` refuses a field the request must not
-// change; a move to another workspace is still allowed where the mover is a
-// member of both.
 const MEMBER_OF_NEW_WS = '@request.data.workspace.workspace_members_via_workspace.user ?= @request.auth.id';
 const ADMIN_OF_ROW =
   '(workspace.owner = @request.auth.id || (@collection.workspace_members:adm.workspace ?= workspace && ' +
@@ -178,7 +157,7 @@ const TEXT_WS_MEMBER =
 const RULES = {
   pages: {
     createRule: `${AUTHED} && ${MEMBER}`,
-    updateRule: null, // extended below, keeping the existing visibility clause
+    updateRule: null,
   },
   tables: {
     createRule: `${AUTHED} && ${MEMBER}`,
@@ -195,67 +174,37 @@ const RULES = {
   presence: {
     createRule: `${AUTHED} && user = @request.auth.id && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id`,
     updateRule:
-      // The heartbeat resends `user`, so it may name the sender, never anyone else.
       'user = @request.auth.id && (@request.data.user:isset = false || @request.data.user = @request.auth.id) && ' +
       '(@request.data.page:isset = false || @request.data.page.workspace.workspace_members_via_workspace.user ?= @request.auth.id)',
   },
   workspace_members: {
-    // Unchanged except that an invite now grants the role it was sent with, not
-    // whatever role the joiner asks for.
     createRule:
       `${AUTHED} && @request.data.user = @request.auth.id && (@request.data.workspace.owner ?= @request.auth.id || ` +
       '(@collection.workspace_invites.workspace ?= @request.data.workspace && @collection.workspace_invites.email ?= @request.auth.email && ' +
       '@collection.workspace_invites.status ?= "pending" && @collection.workspace_invites.role ?= @request.data.role))',
-    // Your own row: name and public key, never your role. Anyone else's row: only
-    // the owner or an admin, and never their public key. Nobody moves a row.
     updateRule:
       `${AUTHED} && @request.data.workspace:isset = false && @request.data.user:isset = false && ` +
       '(@request.data.publicKey:isset = false || user = @request.auth.id) && ' +
       `(${ADMIN_OF_ROW} || (user = @request.auth.id && @request.data.role:isset = false))`,
-    // Leave, or be removed by the owner or an admin.
     deleteRule: `${AUTHED} && (user = @request.auth.id || ${ADMIN_OF_ROW})`,
   },
   workspace_keys: {
-    // Any member may still grant the key to a member (that is how keys spread);
-    // only your own wrapped key, or the owner or an admin, may change or delete one.
     updateRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW}) && @request.data.workspace:isset = false`,
     deleteRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW})`,
   },
-  // Text workspace fields: a new row must name a workspace its writer is in. The
-  // read side keeps its `workspace = ""` escape so rows written before workspaces
-  // existed stay readable; nothing can create a new one.
   yupdates: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
   page_versions: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
   reminders: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
   file_trash: { createRule: `${AUTHED} && ${TEXT_WS_MEMBER}` },
-  // An upload made before a workspace is chosen carries none, so that stays
-  // allowed; one that names a workspace must name the writer's own.
   uploads: {
     createRule: `${AUTHED} && (workspace = "" || (@collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id))`,
   },
 };
 
-// --- the same access, checked faster --------------------------------------------
-// PocketBase 0.22 checks a collection's view rule once per realtime subscriber on
-// every save, inside the saving request, so a rule's cost is paid per member per
-// keystroke. The back-relation `workspace.workspace_members_via_workspace.user`
-// compiles to a join that runs json_each over every membership row on the server
-// and cannot use idx_member_unique; `@collection.workspace_members` compares the
-// columns directly. `editors.id ?=` joins the users table; `editors:each ?=` reads
-// the list in place. (`editors ?=` is NOT the same: it missed listed editors.)
-//
-// Proved equal before use: every one of 45 users listed every record of the seven
-// collections below under both forms (408 lists, 650,121 visible records, with
-// overlapping workspaces, private pages with non-member editors and viewers,
-// pages with no workspace and with a deleted one, share tokens): 0 differences,
-// while a deliberately looser control rule showed 123. Measured, 40 members and 5
-// typing: every request p95 340 -> 178 ms together with keyset loads.
 const FAST_MEMBER = (alias, of) =>
   `(@collection.workspace_members:${alias}.workspace ?= ${of} && @collection.workspace_members:${alias}.user ?= @request.auth.id)`;
 function faster(rule) {
   if (typeof rule !== 'string') return rule;
-  // Only the record's own fields. `@request.data.page.…` and `@request.data.workspace.…`
-  // check where a move or a heartbeat is going TO, and stay as they are.
   return rule
     .replace(/(^|[^.\w])page\.workspace\.workspace_members_via_workspace\.user \?= @request\.auth\.id/g, (m, pre) => pre + FAST_MEMBER('pmem', 'page.workspace'))
     .replace(/(^|[^.\w])workspace\.workspace_members_via_workspace\.user \?= @request\.auth\.id/g, (m, pre) => pre + FAST_MEMBER('mem', 'workspace'))
@@ -299,7 +248,6 @@ for (const col of all) {
   for (const k of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule']) {
     if (typeof r[k] === 'string') col[k] = r[k];
   }
-  // pages keeps its visibility clause and only gains the move check.
   if (col.name === 'pages' && !String(col.updateRule).includes('@request.data.workspace:isset')) {
     col.updateRule = `${col.updateRule} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`;
   }
@@ -424,8 +372,6 @@ migrate(
 );
 `;
 
-// The same narrowed rules for an install that already exists, written from the
-// schema above so the two cannot say different things.
 const RULE_KEYS = ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule'];
 const narrowed = {};
 for (const col of all) {
@@ -434,22 +380,6 @@ for (const col of all) {
   for (const k of RULE_KEYS) narrowed[col.name][k] = col[k] === undefined ? null : col[k];
 }
 const rulesMigration = `/// <reference path="../pb_data/types.d.ts" />
-//
-// 1700000015_narrow_write_rules.js, who may write where, for an existing install,
-// with every membership check in the form PocketBase 0.22 evaluates fastest.
-//
-// GENERATED by scripts/gen-schema.mjs (the RULES block explains each rule). Do not
-// edit by hand.
-//
-// Probed on PocketBase 0.22 with the old rules: a viewer could make themselves
-// admin and remove the owner; anyone could move their own membership row into a
-// workspace whose id they knew and read all of it; anyone signed in could create
-// pages, tables, rows, comments, presence, Yjs updates and trash entries in a
-// workspace they are not in. Every rule here is narrower than the one it replaces.
-// The membership checks are also rewritten to a form proved to grant exactly the
-// same access at about half the cost per check (the FASTER block explains it).
-//
-// Down does nothing on purpose: putting those rules back reopens the holes.
 
 migrate(
   function (db) {
@@ -460,7 +390,7 @@ migrate(
       try {
         col = dao.findCollectionByNameOrId(name);
       } catch (e) {
-        return; // not on this install
+        return;
       }
       var r = rules[name];
       col.listRule = r.listRule;
@@ -485,7 +415,6 @@ if (CHECK) {
   try {
     curRules = readFileSync(RULES_OUT, 'utf8');
   } catch {
-    /* missing counts as drift */
   }
   if (curRules !== rulesMigration) drift.push('server/pb_migrations/1700000015_narrow_write_rules.js');
   if (drift.length) {

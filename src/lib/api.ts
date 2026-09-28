@@ -146,8 +146,6 @@ function toPresence(r: RecordModel): PresenceRecord {
 
 // --- Pages ------------------------------------------------------------------
 
-// Every record of a collection the signed-in user can read, by keyset (see
-// lib/keyset.ts for why), then in `sortKey` order as the page-number list had it.
 async function listAllByKeyset(collection: string, sortKey: string): Promise<RecordModel[]> {
   const records = await loadAllByKeyset((after) =>
     pb
@@ -286,9 +284,6 @@ export const versionsApi = {
       return { id: rec.id, page: rec.page, content, created: rec.created };
     });
   },
-  // Just the ids and dates, for pruning. listForPage brings every version's whole
-  // body (up to 5 MB each, 20 kept), and pruning after each snapshot only needs to
-  // know which ones are old.
   async listStampsForPage(page: string): Promise<{ id: string; created: string }[]> {
     const recs = await pb.collection('page_versions').getFullList({
       filter: pb.filter('page = {:page}', { page }),

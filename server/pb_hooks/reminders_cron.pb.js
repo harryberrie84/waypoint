@@ -24,9 +24,6 @@ cronAdd("reminders", "*/10 * * * *", () => {
   const fromName = settings.meta.senderName || "Waypoint";
   const appUrl = settings.meta.appUrl || "";
 
-  // Read a JSON field with getString. record.get() hands a JSON field to the
-  // JSVM as raw bytes (an array of numbers), so no column ever had a type and
-  // no reminder was ever found.
   const readJSON = (record, field, fallback) => {
     try {
       const v = JSON.parse(record.getString(field) || "null");
@@ -54,9 +51,6 @@ cronAdd("reminders", "*/10 * * * *", () => {
     };
   });
 
-  // A person cell holds whatever ids the client wrote, so only members of the
-  // table's workspace are mailed; anyone else would be mail on request to any
-  // account on the server.
   const isMember = (wsId, userId) => {
     if (!wsId) return false;
     try {
