@@ -269,6 +269,17 @@ export const versionsApi = {
       return { id: rec.id, page: rec.page, content, created: rec.created };
     });
   },
+  // Just the ids and dates, for pruning. listForPage brings every version's whole
+  // body (up to 5 MB each, 20 kept), and pruning after each snapshot only needs to
+  // know which ones are old.
+  async listStampsForPage(page: string): Promise<{ id: string; created: string }[]> {
+    const recs = await pb.collection('page_versions').getFullList({
+      filter: pb.filter('page = {:page}', { page }),
+      sort: '-created,-id',
+      fields: 'id,created',
+    });
+    return recs.map((r) => ({ id: r.id, created: String((r as { created?: unknown }).created ?? '') }));
+  },
   async remove(id: string): Promise<void> {
     await pb.collection('page_versions').delete(id);
   },

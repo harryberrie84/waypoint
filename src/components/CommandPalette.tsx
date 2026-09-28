@@ -83,15 +83,22 @@ export function CommandPalette({ open, onClose, onOpenSettings, onOpenThemes, on
   // Decrypted bodies of encrypted pages, so search can reach their text too.
   const searchBodies = useWorkspaceKeys((s) => s.searchBodies);
   // Rows scoped to the active workspace (those whose table is in this workspace).
+  // The palette is mounted all the time and its hooks run before the `!open`
+  // return, so both of these used to rebuild on every store change, which is
+  // every keystroke in the editor, while nobody was searching. Closed, they skip.
   const scopedRows = useMemo(() => {
-    const ids = new Set(wsTables.map((t) => t.id));
     const out: Record<string, TableRow> = {};
+    if (!open) return out;
+    const ids = new Set(wsTables.map((t) => t.id));
     for (const r of Object.values(rows)) if (ids.has(r.table)) out[r.id] = r;
     return out;
-  }, [rows, wsTables]);
+  }, [open, rows, wsTables]);
   // Rebuilt only when the store data changes, not on every keystroke.
-  const index = useMemo(() => buildSearchIndex(pages, tables, scopedRows, searchBodies), [pages, tables, scopedRows, searchBodies]);
-  const results = useMemo(() => searchIndex(index, query, 8), [index, query]);
+  const index = useMemo(
+    () => (open ? buildSearchIndex(pages, tables, scopedRows, searchBodies) : null),
+    [open, pages, tables, scopedRows, searchBodies],
+  );
+  const results = useMemo(() => (index ? searchIndex(index, query, 8) : []), [index, query]);
 
   // Things the palette can DO, not just find. Built from the store plus the app
   // handlers; the ones whose handler isn't wired are dropped.

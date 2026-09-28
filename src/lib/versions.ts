@@ -32,7 +32,7 @@ const ALWAYS_KEEP = 3;
 
 async function prune(pageId: string): Promise<void> {
   try {
-    const list = await versionsApi.listForPage(pageId); // newest first
+    const list = await versionsApi.listStampsForPage(pageId); // newest first
     const cutoff = Date.now() - MAX_AGE_DAYS * 86400000;
     const stale = list.filter(
       (v, i) => i >= KEEP || (i >= ALWAYS_KEEP && new Date(v.created).getTime() < cutoff),
