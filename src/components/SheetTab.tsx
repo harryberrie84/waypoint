@@ -82,7 +82,14 @@ export function SheetTab({ pageId, editable }: { pageId: string; editable: boole
   const startEdit = (seed?: string) => {
     if (!canEdit) return;
     setDraft(seed ?? selRaw);
-    requestAnimationFrame(() => inputRef.current?.select());
+    // A typed first character starts the edit, so the caret goes after it; selecting
+    // it (right for F2 and double-click) let the next keystroke replace it.
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      if (seed === undefined) el.select();
+      else el.setSelectionRange(el.value.length, el.value.length);
+    });
   };
 
   const commitDraft = (moveBy: { dr: number; dc: number } | null) => {
@@ -95,9 +102,11 @@ export function SheetTab({ pageId, editable }: { pageId: string; editable: boole
   // so typing a formula never also walks the selection.
   const onGridKey = (e: React.KeyboardEvent) => {
     if (draft !== null) {
-      if (e.key === 'Enter') { e.preventDefault(); commitDraft({ dr: 1, dc: 0 }); }
-      else if (e.key === 'Tab') { e.preventDefault(); commitDraft({ dr: 0, dc: e.shiftKey ? -1 : 1 }); }
-      else if (e.key === 'Escape') { e.preventDefault(); setDraft(null); }
+      // The cell input unmounts on commit and would take focus with it, leaving the
+      // arrows dead until someone clicks the grid again.
+      if (e.key === 'Enter') { e.preventDefault(); commitDraft({ dr: 1, dc: 0 }); gridRef.current?.focus(); }
+      else if (e.key === 'Tab') { e.preventDefault(); commitDraft({ dr: 0, dc: e.shiftKey ? -1 : 1 }); gridRef.current?.focus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); setDraft(null); gridRef.current?.focus(); }
       return;
     }
     if (e.key === 'ArrowUp') { e.preventDefault(); move(-1, 0); }
