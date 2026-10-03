@@ -30,6 +30,11 @@ export function VersionHistory({
   useEffect(() => {
     if (!open) return;
     let alive = true;
+    // Drop the last list before fetching: rows left from the previous opening shift
+    // once the new copy saved by a restore arrives, and a quick click then restores
+    // the wrong one.
+    setVersions([]);
+    setConfirmId(null);
     setLoading(true);
     void versionsApi
       .listForPage(pageId)
