@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Plus, Trash2, Tag, ChevronDown, ChevronRight, Maximize2, Download, Upload, FileText, Copy, CalendarPlus, Link2, Unlink, AlertTriangle, ArrowLeft, ArrowRight, Share2, RefreshCw, Globe } from 'lucide-react';
+import { formulaFor, queryRows, computedCells } from '../lib/scope';
+import { Plus, Trash2, Tag, ChevronDown, ChevronRight, Maximize2, Download, Upload, FileText, Copy, CalendarPlus, Link2, Unlink, AlertTriangle, ArrowLeft, ArrowRight, Share2, RefreshCw, Globe, LayoutList } from 'lucide-react';
 import { findClashes } from '../lib/clash';
-import { useData, selectRowsForTable } from '../store/useData';
+import { useData, selectRowsForTable, stableRowKey } from '../store/useData';
 import { toastWithAction } from '../store/useToast';
 import { confirmAsk } from '../store/useConfirm';
 import { useWorkspace } from '../store/useWorkspace';
@@ -14,7 +15,7 @@ import type { Column, ColumnType, CellValue, TableData, TableRow, AggregationKin
 import { evaluateFormula, formatValue } from '../lib/formula';
 import { shortId } from '../lib/id';
 import { Cell, TYPE_META, buildScope as scopeFor, coerceNumber } from './TableCell';
-import { applyQuery, loadViewConfig, saveViewConfig, defaultViewConfig, buildRowTree, titleColumn, firstPlaceColumn, packedStat, rowIcon, rowColor, type ViewConfig, type ColorRule } from '../lib/tableQuery';
+import { loadViewConfig, saveViewConfig, defaultViewConfig, buildRowTree, titleColumn, firstPlaceColumn, packedStat, rowIcon, rowColor, type ViewConfig, type ColorRule } from '../lib/tableQuery';
 import { isImageIcon } from '../lib/pageIcon';
 import { planUrlImport } from '../lib/urlImport';
 import { fetchLinkMeta } from '../lib/linkMeta';
@@ -52,11 +53,12 @@ export interface EmbedViewControls {
   setViewConfig: (cfg: ViewConfig | null) => void; // null clears back to the shared view
   duplicateLinked: (cfg: ViewConfig) => void; // insert a sibling embed of the same table
   deleteEmbed?: () => void; // remove this embed from the page (asks first); table rows are kept
+  showWidget?: () => void;
 }
 
 const cloneView = (v: ViewConfig): ViewConfig => JSON.parse(JSON.stringify(v));
 
-export function TableView({ tableId, embed }: { tableId: string; embed?: EmbedViewControls }) {
+export function TableView({ tableId, embed, bare = false }: { tableId: string; embed?: EmbedViewControls; bare?: boolean }) {
   const table = useData((s) => s.tables[tableId]);
   const rowsMap = useData((s) => s.rows);
   const renameTable = useData((s) => s.renameTable);
@@ -98,7 +100,7 @@ export function TableView({ tableId, embed }: { tableId: string; embed?: EmbedVi
       if (col.type !== 'number' && col.type !== 'formula') continue;
       let s = 0;
       for (const r of allRows) {
-        const v = col.type === 'number' ? coerceNumber(r.cells[col.id]) : coerceNumber(evaluateFormula(col.formula ?? '', scopeFor(columns, r.cells)).value);
+        const v = col.type === 'number' ? coerceNumber(r.cells[col.id]) : coerceNumber(evaluateFormula(formulaFor(col, r.cells), scopeFor(columns, r.cells)).value);
         if (Number.isFinite(v)) s += v;
       }
       sums[col.name] = s;
@@ -124,7 +126,7 @@ export function TableView({ tableId, embed }: { tableId: string; embed?: EmbedVi
     const resolved = view.filters.some((f) => f.value === '@me')
       ? { ...view, filters: view.filters.map((f) => (f.value === '@me' ? { ...f, value: myId } : f)) }
       : view;
-    return applyQuery(allRows, columns, resolved);
+    return queryRows(allRows, columns, resolved);
   }, [allRows, columns, view, myId]);
 
   // Conditional-format rules with the `@me` person sentinel resolved, same as
@@ -162,8 +164,9 @@ export function TableView({ tableId, embed }: { tableId: string; embed?: EmbedVi
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-paper-line bg-paper dark:border-coal-line dark:bg-coal-panel" onContextMenu={onTableContextMenu}>
-      {/* Table header / name */}
+    <div className={bare ? '' : 'overflow-hidden rounded-xl border border-paper-line bg-paper dark:border-coal-line dark:bg-coal-panel'} onContextMenu={onTableContextMenu}>
+      <fieldset disabled={embed ? !embed.editable : false} className="m-0 min-w-0 border-0 p-0">
+      {!bare && (<>
       <div className="flex items-center gap-2 border-b border-paper-line px-3 py-2 dark:border-coal-line">
         <Tag className="h-4 w-4 text-clay" />
         <input
@@ -171,6 +174,7 @@ export function TableView({ tableId, embed }: { tableId: string; embed?: EmbedVi
           onChange={(e) => renameTable(tableId, e.target.value)}
           className="flex-1 bg-transparent text-sm font-semibold text-ink outline-none placeholder:text-ink-faint dark:text-coal-text"
           placeholder="Table name"
+          maxLength={200}
         />
         <span className="font-mono text-[10px] uppercase tracking-wide text-ink-faint dark:text-coal-soft">
           {shortId(tableId)}
@@ -181,9 +185,19 @@ export function TableView({ tableId, embed }: { tableId: string; embed?: EmbedVi
         <TableShareButton tableId={tableId} table={table} rows={rows} view={view} />
         <TableDataMenu tableId={tableId} table={table} rows={rows} view={view} />
         <AutomationsButton tableId={tableId} columns={table.columns} />
+        {embed?.showWidget && (
+          <button
+            type="button"
+            onClick={embed.showWidget}
+            title="Show as a widget"
+            aria-label="Show as a widget"
+            className="rounded-md p-1.5 text-ink-faint hover:bg-paper-panel hover:text-clay dark:text-coal-soft dark:hover:bg-coal-line"
+          >
+            <LayoutList className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
-      {/* View tabs + query controls */}
       <TableToolbar
         tableId={tableId}
         columns={table.columns}
@@ -192,6 +206,7 @@ export function TableView({ tableId, embed }: { tableId: string; embed?: EmbedVi
         total={allRows.length}
         shown={rows.length}
       />
+      </>)}
 
       {/* Active view */}
       {view.type === 'grid' && (
@@ -204,6 +219,7 @@ export function TableView({ tableId, embed }: { tableId: string; embed?: EmbedVi
       {view.type === 'timeline' && <TimelineView tableId={tableId} table={table} rows={rows} view={view} />}
       {view.type === 'map' && <MapView tableId={tableId} table={table} rows={rows} view={view} />}
       {view.type === 'route' && <RouteView tableId={tableId} table={table} rows={rows} view={view} />}
+      </fieldset>
 
       {ctxMenu && (
         <>
@@ -378,10 +394,10 @@ function GridView({
             {tree.map(({ row, depth, hasChildren }) => {
               const scope = scopeFor(table.columns, row.cells);
               const clashing = clashes.has(row.id);
-              const tint = rowColor(row.cells, colorRules);
+              const tint = rowColor(colorRules?.length ? computedCells(table.columns, row.cells) : row.cells, colorRules);
               return (
                 <tr
-                  key={row.id}
+                  key={stableRowKey(row.id)}
                   className={[
                     'group border-b border-paper-line last:border-0 dark:border-coal-line',
                     clashing && !tint ? 'bg-rose-500/[0.06]' : '',
@@ -606,6 +622,9 @@ function ColumnHeader({ tableId, column }: { tableId: string; column: Column }) 
                 placeholder="[Nights] * [Rate]"
                 className="w-full rounded-md border border-paper-line bg-paper px-2 py-1 font-mono text-xs text-ink outline-none focus:border-clay dark:border-coal-line dark:bg-coal dark:text-coal-text"
               />
+              <p className="mt-1 text-[10px] leading-tight text-ink-soft dark:text-coal-soft">
+                Every cell uses this unless you click a cell and give it its own. Cells with their own formula have a dot.
+              </p>
               <p className="mt-1 text-[10px] leading-tight text-ink-faint dark:text-coal-soft">
                 Reference columns in [brackets], or a single-word name bare. Functions: sum, avg, min, max,
                 round, if, days, today, workdays, daysoff, holiday (Swedish red days), countdown("label"),
@@ -982,7 +1001,7 @@ function SummaryRow({ columns, rows }: { columns: Column[]; rows: TableRow[] }) 
           const values = rows.map((r) => {
             if (col.type === 'number') return coerceNumber(r.cells[col.id]);
             const scope = scopeFor(columns, r.cells);
-            return coerceNumber(evaluateFormula(col.formula ?? '', scope).value);
+            return coerceNumber(evaluateFormula(formulaFor(col, r.cells), scope).value);
           });
           const sum = values.reduce((a, b) => a + b, 0);
           if (kind === 'sum') display = formatValue(sum, col.numberFormat);

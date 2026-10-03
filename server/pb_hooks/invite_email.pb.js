@@ -6,7 +6,8 @@
 // who); this hook does the rest. The email carries a deep link back to the app
 // with the invited address baked in (`/?invite=<email>`), so the auth screen
 // prefills it and the invitee signs up with the exact email the invite was sent
-// to, which is what claim_invites.pb.js needs to turn it into a membership.
+// to. The link also carries the invite's one-time secret (`t`), which is what
+// invite_claim.pb.js checks before seating an account that is not verified.
 //
 // Without this hook the invitee gets nothing and has to be told out-of-band to
 // register with the right address. Pairs with claim_invites.pb.js (membership)
@@ -52,29 +53,39 @@ onRecordAfterCreateRequest(function (e) {
     }
   } catch (_) { /* keep the generic name */ }
 
+  var esc = function (v) {
+    return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  };
+  var wsHtml = esc(wsName);
+  var inviterHtml = esc(inviter);
+  var emailHtml = esc(email);
+
   var role = inv.get("role") || "editor";
   var roleBlurb = ROLE_BLURB[role] || ROLE_BLURB.editor;
 
+  var info = $apis.requestInfo(e.httpContext);
+  var token = info && info.data && typeof info.data.token === "string" ? info.data.token : "";
   var link = appUrl
-    ? appUrl + "/?invite=" + encodeURIComponent(email) + "&ws=" + encodeURIComponent(wsName)
+    ? appUrl + "/?invite=" + encodeURIComponent(email) + "&ws=" + encodeURIComponent(wsName) +
+      (token ? "&t=" + encodeURIComponent(token) : "")
     : "";
 
   var button = link
     ? '<p style="margin:20px 0">' +
-        '<a href="' + link + '" style="background:#e05a86;color:#fff;text-decoration:none;' +
+        '<a href="' + esc(link) + '" style="background:#e05a86;color:#fff;text-decoration:none;' +
         'padding:10px 18px;border-radius:8px;font-weight:600;display:inline-block">' +
-        'Join ' + wsName + '</a></p>' +
-        '<p style="color:#999;font-size:12px">or paste this into your browser:<br>' + link + '</p>'
-    : '<p>Open Waypoint and create an account (or sign in) with <strong>' + email + '</strong> to join.</p>';
+        'Join ' + wsHtml + '</a></p>' +
+        '<p style="color:#999;font-size:12px">or paste this into your browser:<br>' + esc(link) + '</p>'
+    : '<p>Open Waypoint and create an account (or sign in) with <strong>' + emailHtml + '</strong> to join.</p>';
 
   var message = new MailerMessage({
     from: { address: fromAddress, name: fromName },
     to: [{ address: email }],
     subject: inviter + " invited you to " + wsName + " on Waypoint",
     html:
-      '<p><strong>' + inviter + '</strong> invited you to <strong>' + wsName + '</strong> ' + roleBlurb + '.</p>' +
+      '<p><strong>' + inviterHtml + '</strong> invited you to <strong>' + wsHtml + '</strong> ' + roleBlurb + '.</p>' +
       button +
-      '<p style="color:#999;font-size:12px">Sign up with this exact email (' + email +
+      '<p style="color:#999;font-size:12px">Sign up with this exact email (' + emailHtml +
       ') so you land in the right workspace.</p>',
   });
 

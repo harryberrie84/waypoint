@@ -163,7 +163,7 @@ function PollBlockView({ node, updateAttributes, editor, deleteNode }: NodeViewP
             <button
               type="button"
               onClick={addOption}
-              className="flex items-center gap-1 rounded-md bg-clay px-2 py-1 text-xs font-medium text-white hover:bg-clay/90 disabled:opacity-50"
+              className="flex items-center gap-1 rounded-lg bg-clay px-2 py-1 text-xs font-medium text-white hover:bg-clay/90 disabled:opacity-50"
               disabled={!draft.trim()}
             >
               <Plus className="h-3.5 w-3.5" /> add

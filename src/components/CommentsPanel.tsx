@@ -123,7 +123,8 @@ export function CommentsPanel({ pageId, rowId, onClose }: { pageId: string; rowI
         });
       })
       .then((fn) => {
-        unsub = fn;
+        if (cancelled) void fn();
+        else unsub = fn;
       })
       .catch(() => {});
 
@@ -272,9 +273,15 @@ export function CommentsPanel({ pageId, rowId, onClose }: { pageId: string; rowI
               ))}
             </div>
           )}
+          {draft.length > 2500 && (
+            <p className={`px-1 text-right text-[11px] ${draft.length >= 3000 ? 'text-rose-500' : 'text-ink-faint dark:text-coal-soft'}`}>
+              {draft.length}/3000
+            </p>
+          )}
           <textarea
             ref={taRef}
             value={draft}
+            maxLength={3000}
             onChange={onDraftChange}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {

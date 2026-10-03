@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { mergeById, mergeCells } from '../lib/merge';
+import { PRESET_TABLE_NAMES } from '../lib/tableWidgets';
 import type {
   Page,
   TableData,
@@ -26,6 +28,9 @@ import {
   selectWorkspaceTables,
   selectBreadcrumb,
   selectRowsForTable,
+  pagesToTrash,
+  pagesToRestore,
+  pagesToDelete,
 } from '../lib/pageTree';
 import { selectMyRole, canEdit, canManageSharing } from '../lib/permissions';
 import { planImport, parseDelimited } from '../lib/csv';
@@ -74,6 +79,37 @@ function resolveAutomations(table: { automations?: Automation[] | null; id: stri
 }
 // Guard so automation-applied writes don't re-trigger automations (no loops).
 let automationRunning = false;
+
+let lastOfflineNotice = 0;
+function offlineOnly(what: string): boolean {
+  if (typeof navigator === 'undefined' || navigator.onLine !== false) return false;
+  const now = Date.now();
+  if (now - lastOfflineNotice > 3000) {
+    lastOfflineNotice = now;
+    toast(`You're offline. ${what} can be made once you're back online; other edits wait in this tab until then.`, 'error');
+  }
+  return true;
+}
+
+let lastViewerNotice = 0;
+function viewerOnly(workspaceId?: string, quiet = false): boolean {
+  if (useWorkspace.getState().myRole(workspaceId || undefined) !== 'viewer') return false;
+  if (quiet) return true;
+  const now = Date.now();
+  if (now - lastViewerNotice > 4000) {
+    lastViewerNotice = now;
+    toast('You can view this workspace but not change it. Ask an admin for edit access.', 'error');
+  }
+  return true;
+}
+
+
+const unsavedRows = new Set<string>();
+const rowKeyAlias = new Map<string, string>();
+
+export function stableRowKey(rowId: string): string {
+  return rowKeyAlias.get(rowId) ?? rowId;
+}
 
 // Cover images persist to `pages.cover` when that field exists; otherwise the
 // server echo comes back blank and would wipe the optimistic value (the cover
@@ -704,7 +740,7 @@ function withLocalReactions(r: TableRow): TableRow {
 function hydrateRow(r: TableRow): TableRow {
   return withLocalReactions(withLocalParent(r));
 }
-import { pagesApi, tablesApi, rowsApi, workspacesApi, workspaceMembersApi, workspaceKeysApi, uploadsApi, fileTrashApi, setUploadWorkspace } from '../lib/api';
+import { pagesApi, tablesApi, rowsApi, workspacesApi, workspaceMembersApi, workspaceKeysApi, uploadsApi, fileTrashApi, setUploadWorkspace, savesWaitingForNetwork } from '../lib/api';
 import { maybeSnapshot } from '../lib/versions';
 import { useWorkspace } from './useWorkspace';
 import { useVault } from './useVault';
@@ -721,6 +757,7 @@ import { appendCapture, appendImage } from '../lib/capture';
 import { isEnvelope, displayTitle } from '../lib/crypto';
 import { splitCells, ENC_KEY } from '../lib/cellCrypto';
 import { saveDataset, loadDataset } from '../lib/offlineCache';
+import { PAGE_LIST_FIELDS } from '../lib/pageFields';
 import { clearLocalPageDoc, markForceSeed } from '../lib/collab';
 import { remapDeep, orderPagesByParent, deadTableRemaps, type BackupFile, type RestoreCounts, type RestoreCreated, type TableSnapshot } from '../lib/restoreBackup';
 import {
@@ -728,7 +765,7 @@ import {
   saveMoveSnapshot, loadMoveSnapshot, clearMoveSnapshot, savePendingMove, loadPendingMove, type MoveSnapshot,
 } from '../lib/turnIntoWorkspace';
 import { useWorkspaceKeys } from './useWorkspaceKeys';
-import { toast } from './useToast';
+import { toast, toastWithAction } from './useToast';
 import { beginProseWrite, endProseWrite, reconcileProseEcho, resetProseWrites, beginWrite, endWrite, isWriting, isStaleRecord, keepPendingFields } from '../lib/proseSync';
 import { loadLastPage, loadLanding } from '../lib/landing';
 import { fetchRates, setRates, ratesAreStale } from '../lib/fx';
@@ -789,13 +826,37 @@ async function dropPageYUpdates(pageId: string): Promise<void> {
 // `columns` array). Every columns writer routes through here so none can bypass the
 // guard. Debounced + collapsed per table (last write wins), matching the optimistic
 // store update each caller already applied.
+const serverColumns = new Map<string, Column[]>();
+const dirtyCells = new Map<string, Set<string>>();
+
 function persistColumns(tableId: string, columns: Column[], label: string): void {
   const seq = beginWrite(tableId, 'columns');
-  debounceWrite(`table-cols-${tableId}`, () => {
-    tablesApi
-      .update(tableId, { columns })
-      .catch((err) => console.error(`[data] ${label} failed`, err))
-      .finally(() => endWrite(tableId, 'columns', seq));
+  debounceWrite(`table-cols-${tableId}`, async () => {
+    const store = useData.getState();
+    const local = store.tables[tableId]?.columns ?? columns;
+    let toSave = local;
+    const base = serverColumns.get(tableId);
+    if (base) {
+      try {
+        toSave = mergeById(base, local, (await tablesApi.get(tableId)).columns);
+      } catch {
+        toSave = local;
+      }
+    }
+    try {
+      await tablesApi.update(tableId, { columns: toSave });
+      serverColumns.set(tableId, toSave);
+      if (toSave !== local) {
+        useData.setState((s) => {
+          const t = s.tables[tableId];
+          return t && t.columns === local ? { tables: { ...s.tables, [tableId]: { ...t, columns: toSave } } } : s;
+        });
+      }
+    } catch (err) {
+      console.error(`[data] ${label} failed`, err);
+    } finally {
+      endWrite(tableId, 'columns', seq);
+    }
   });
 }
 
@@ -826,7 +887,10 @@ interface DataState {
   pendingWorkspaceMove: { opId: string; label: string } | null;
 
   hydrate: () => Promise<void>;
+  applyServerChange: (collection: 'pages' | 'tables' | 'table_rows', action: string, record: RecordModel) => void;
+  _hydrateOnce: () => Promise<void>;
   subscribeRealtime: () => Promise<void>;
+  catchUp: () => Promise<void>;
   unsubscribeRealtime: () => Promise<void>;
   teardown: () => void;
 
@@ -971,7 +1035,7 @@ interface DataState {
   firePageCheckboxFlows: (pageId: string, oldDoc: unknown, newDoc: unknown) => void;
   trashPage: (id: string) => Promise<void>; // soft delete (recoverable)
   restorePage: (id: string) => Promise<void>; // bring back from trash
-  deletePage: (id: string) => Promise<void>; // permanent delete (from trash)
+  deletePage: (id: string, opts?: { quiet?: boolean }) => Promise<boolean>; // permanent delete (from trash)
   emptyTrash: () => Promise<void>; // permanently delete everything in the trash
   sweepOldTrash: (maxAgeDays: number) => Promise<number>; // purge trash older than N days; returns the count
   // Hard-delete every page/table/row stamped with a workspace, from the store and
@@ -1072,7 +1136,8 @@ interface DataState {
   addRow: (tableId: string, initialCells?: Record<string, CellValue>, parentId?: string) => Promise<string | null>;
   addSubRow: (parentRowId: string) => Promise<string | null>;
   setRowParent: (rowId: string, parentId: string) => void;
-  deleteRow: (rowId: string) => Promise<void>;
+  deleteRow: (rowId: string, opts?: { quiet?: boolean }) => Promise<TableRow[]>;
+  restoreRows: (rows: TableRow[]) => Promise<boolean>;
   setCell: (rowId: string, columnId: string, value: CellValue) => void;
   // Replace encrypted row cells in memory with their decrypted object (computed by
   // the workspace-key store). In-memory only; never persisted.
@@ -1232,6 +1297,67 @@ const writeFirstAt = new Map<string, number>();
 // The pending fn per key, so a specific write can be run early via flushWrite().
 const writeFns = new Map<string, () => void | Promise<unknown>>();
 
+// Writes made offline wait here, in memory only, and go out on the next `online`.
+// Best effort: closing the tab drops them, and the banner says so. Nothing that
+// creates or deletes is queued (offlineOnly refuses those), and the cell and column
+// saves merge into the server's current copy when they finally run.
+const offlineOutbox = new Map<string, () => void | Promise<unknown>>();
+const outboxListeners = new Set<() => void>();
+
+function runWrite(key: string, fn: () => void | Promise<unknown>): Promise<unknown> {
+  if (!pb.authStore.token) return Promise.resolve();
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    offlineOutbox.set(key, fn);
+    for (const l of outboxListeners) l();
+    return Promise.resolve();
+  }
+  return Promise.resolve(fn()).catch(() => undefined);
+}
+
+export function pendingWriteCount(): number {
+  return writeFns.size + offlineOutbox.size + savesWaitingForNetwork();
+}
+
+export function onPendingWritesChange(listener: () => void): () => void {
+  outboxListeners.add(listener);
+  return () => outboxListeners.delete(listener);
+}
+
+export function flushAllWrites(): Promise<unknown> {
+  const running: Promise<unknown>[] = [];
+  for (const [key, fn] of [...writeFns]) {
+    const timer = writeTimers.get(key);
+    if (timer) clearTimeout(timer);
+    writeTimers.delete(key);
+    writeFirstAt.delete(key);
+    writeFns.delete(key);
+    running.push(runWrite(key, fn));
+  }
+  return Promise.allSettled(running);
+}
+
+function replayOutbox() {
+  const items = [...offlineOutbox];
+  offlineOutbox.clear();
+  for (const [, fn] of items) void fn();
+  for (const l of outboxListeners) l();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', replayOutbox);
+  window.addEventListener('pagehide', () => void flushAllWrites());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') void flushAllWrites();
+  });
+  window.addEventListener('beforeunload', (e) => {
+    void flushAllWrites();
+    if (offlineOutbox.size > 0 || savesWaitingForNetwork() > 0) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+}
+
 // Debounced write that also honours a maxWait: it saves `delay` ms after the last
 // call (save-on-pause), but if a continuous burst runs past `maxWait` it flushes
 // anyway, so a fast typist's text syncs every second or so instead of only on stop.
@@ -1247,7 +1373,7 @@ function debounceWrite(key: string, fn: () => void | Promise<unknown>, delay = 3
     } else if (now - first >= maxWait) {
       writeFirstAt.delete(key);
       writeFns.delete(key);
-      void fn();
+      runWrite(key, fn);
       return;
     }
   }
@@ -1257,7 +1383,7 @@ function debounceWrite(key: string, fn: () => void | Promise<unknown>, delay = 3
       writeTimers.delete(key);
       writeFirstAt.delete(key);
       writeFns.delete(key);
-      void fn();
+      runWrite(key, fn);
     }, delay),
   );
 }
@@ -1315,6 +1441,15 @@ function pbUserId(): string {
 // refresh drops these, so a post-refresh revert restores structure + relations only.
 const moveContentSnaps = new Map<string, { pageId: string; oldContent: unknown }[]>();
 
+let serverWatermark = '';
+const noteServerTime = (updated: unknown) => {
+  if (typeof updated === 'string' && updated > serverWatermark) serverWatermark = updated;
+};
+let catchUpRunning = false;
+
+let hydrateRunning: Promise<void> | null = null;
+let hydrateQueued: Promise<void> | null = null;
+
 export const useData = create<DataState>((set, get) => ({
   pages: {},
   tables: {},
@@ -1327,7 +1462,23 @@ export const useData = create<DataState>((set, get) => ({
   openRowId: null,
   pageCollabNonce: {},
 
-  hydrate: async () => {
+  hydrate: () => {
+    if (!hydrateRunning) {
+      hydrateRunning = get()._hydrateOnce().finally(() => {
+        hydrateRunning = null;
+      });
+      return hydrateRunning;
+    }
+    if (!hydrateQueued) {
+      hydrateQueued = hydrateRunning.then(() => {
+        hydrateQueued = null;
+        return get().hydrate();
+      });
+    }
+    return hydrateQueued;
+  },
+
+  _hydrateOnce: async () => {
     let pages: Page[];
     let tables: TableData[];
     let rows: TableRow[];
@@ -1340,14 +1491,15 @@ export const useData = create<DataState>((set, get) => ({
       // Write-through the offline read cache on every good load (best-effort, and
       // it stores exactly what the server sent, so encrypted content stays
       // ciphertext at rest, decrypted in memory like a live fetch).
-      void saveDataset({ pages, tables, rows });
+      void saveDataset(pb.authStore.record?.id ?? '', { pages, tables, rows });
+      for (const t of tables) serverColumns.set(t.id, t.columns);
     } catch (err) {
       // Fall back to the last cached snapshot ONLY when we are genuinely offline,
       // so the workspace still opens read-only with no signal (the China case). A
       // failure while ONLINE (a server error, an expired token) still surfaces the
       // error instead of masking it with stale data. The cache is read-only display
       // and is never written back to the server, so it can't overwrite anything.
-      const cached = navigator.onLine ? null : await loadDataset();
+      const cached = navigator.onLine ? null : await loadDataset(pb.authStore.record?.id ?? '');
       if (!cached) {
         set({ loadError: err instanceof Error ? err.message : 'Failed to load workspace', loaded: true });
         return;
@@ -1435,6 +1587,7 @@ export const useData = create<DataState>((set, get) => ({
 
       // Restore a pending Revert/Accept notice across a refresh (only Accept/Revert
       // clears it), so a move can't become un-revertable just by reloading.
+      for (const x of [...pages, ...tables, ...rows]) noteServerTime(x.updated);
       set({ pages: pageMap, tables: tableMap, rows: rowMap, loaded: true, loadError: null, activePageId: active, pendingWorkspaceMove: loadPendingMove() });
       markFlowsDirty();
       startScheduleTick(get); // schedule triggers fire on their own from here
@@ -1443,10 +1596,10 @@ export const useData = create<DataState>((set, get) => ({
     }
   },
 
-  subscribeRealtime: async () => {
     // pages
-    await pb.collection('pages').subscribe('*', (e) => {
-      const { action, record } = e as { action: string; record: RecordModel };
+  applyServerChange: (collection, action, record) => {
+    noteServerTime(record.updated);
+    if (collection === 'pages') {
       markFlowsDirty(); // a page create/update/delete may add or change a flow
       set((s) => {
         const pages = { ...s.pages };
@@ -1474,10 +1627,8 @@ export const useData = create<DataState>((set, get) => ({
         pages[record.id] = merged;
         return { pages };
       });
-    });
     // tables
-    await pb.collection('tables').subscribe('*', (e) => {
-      const { action, record } = e as { action: string; record: RecordModel };
+    } else if (collection === 'tables') {
       set((s) => {
         const tables = { ...s.tables };
         if (action === 'delete') delete tables[record.id];
@@ -1486,14 +1637,13 @@ export const useData = create<DataState>((set, get) => ({
         else {
           const incoming = withLocalFormKey(toTable(record));
           if (isStaleRecord(s.tables[record.id], incoming)) return s; // out-of-order echo
+          serverColumns.set(record.id, incoming.columns);
           tables[record.id] = keepPendingFields(s.tables[record.id], incoming, ['name', 'columns', 'views', 'automations']);
         }
         return { tables };
       });
-    });
     // rows
-    await pb.collection('table_rows').subscribe('*', (e) => {
-      const { action, record } = e as { action: string; record: RecordModel };
+    } else {
       set((s) => {
         const rows = { ...s.rows };
         if (action === 'delete') {
@@ -1546,7 +1696,37 @@ export const useData = create<DataState>((set, get) => ({
         rows[record.id] = merged;
         return { rows };
       });
-    });
+    }
+  },
+
+  subscribeRealtime: async () => {
+    const on = (collection: 'pages' | 'tables' | 'table_rows') => (e: unknown) => {
+      const { action, record } = e as { action: string; record: RecordModel };
+      get().applyServerChange(collection, action, record);
+    };
+    await pb.collection('pages').subscribe('*', on('pages'));
+    await pb.collection('tables').subscribe('*', on('tables'));
+    await pb.collection('table_rows').subscribe('*', on('table_rows'));
+  },
+
+  catchUp: async () => {
+    if (!get().loaded || !serverWatermark || catchUpRunning) return;
+    catchUpRunning = true;
+    try {
+      const since = new Date(Date.parse(serverWatermark.replace(' ', 'T')) - 60_000).toISOString().replace('T', ' ');
+      const opts = { filter: pb.filter('updated >= {:since}', { since }), sort: 'updated,id' };
+      const [p, t, r] = await Promise.all([
+        pb.collection('pages').getFullList({ ...opts, fields: PAGE_LIST_FIELDS }),
+        pb.collection('tables').getFullList(opts),
+        pb.collection('table_rows').getFullList(opts),
+      ]);
+      for (const rec of p) get().applyServerChange('pages', 'update', rec);
+      for (const rec of t) get().applyServerChange('tables', 'update', rec);
+      for (const rec of r) get().applyServerChange('table_rows', 'update', rec);
+    } catch {
+    } finally {
+      catchUpRunning = false;
+    }
   },
 
   unsubscribeRealtime: async () => {
@@ -1659,6 +1839,8 @@ export const useData = create<DataState>((set, get) => ({
   // --- pages --------------------------------------------------------------
 
   createPage: async (parentId, activate = true) => {
+    if (viewerOnly()) return null;
+    if (offlineOnly('New pages')) return null;
     const siblings = Object.values(get().pages).filter((p) => p.parent === parentId && !p.trashed);
     try {
       const page = await pagesApi.create({
@@ -2082,6 +2264,7 @@ export const useData = create<DataState>((set, get) => ({
   // Deep-duplicate a page: clones its embedded tables (so the copy is fully
   // independent), then the page, then its child pages recursively.
   duplicatePage: async (pageId, parentOverride, rename = true) => {
+    if (viewerOnly(get().pages[pageId]?.workspace)) return null;
     const state = get();
     const src = state.pages[pageId];
     if (!src) return null;
@@ -2213,6 +2396,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   setPageCover: (pageId, cover) => {
+    if (viewerOnly(get().pages[pageId]?.workspace)) return;
     set((s) => {
       const p = s.pages[pageId];
       if (!p) return s;
@@ -3526,18 +3710,14 @@ export const useData = create<DataState>((set, get) => ({
 
   // Helper-free recursive descendant collection used by trash/restore/delete.
   trashPage: async (id) => {
+    if (viewerOnly(get().pages[id]?.workspace)) return;
     const pages = get().pages;
-    const ids: string[] = [];
-    const collect = (pid: string) => {
-      for (const p of Object.values(pages)) if (p.parent === pid) collect(p.id);
-      ids.push(pid);
-    };
-    collect(id);
+    const ids = pagesToTrash(pages, id);
     const label = pages[id]?.title || 'page';
 
     set((s) => {
       const next = { ...s.pages };
-      for (const rid of ids) if (next[rid]) next[rid] = { ...next[rid], trashed: true };
+      for (const rid of ids) if (next[rid]) next[rid] = { ...next[rid], trashed: true, trashedWith: id };
       let active = s.activePageId;
       if (active && ids.includes(active)) {
         // Pick the next page from the SAME workspace, so trashing doesn't fling
@@ -3563,7 +3743,7 @@ export const useData = create<DataState>((set, get) => ({
 
     markFlowsDirty(); // trashed pages' flows stop firing; don't wait for the echo
     for (const rid of ids) {
-      pagesApi.update(rid, { trashed: true }).catch((err) => {
+      pagesApi.update(rid, { trashed: true, trashedWith: id }).catch((err) => {
         console.error('[data] trashPage failed for', rid, err);
         if (navigator.onLine) void get().hydrate();
       });
@@ -3572,37 +3752,44 @@ export const useData = create<DataState>((set, get) => ({
 
   restorePage: async (id) => {
     const pages = get().pages;
-    const ids: string[] = [];
-    const collect = (pid: string) => {
-      for (const p of Object.values(pages)) if (p.parent === pid) collect(p.id);
-      ids.push(pid);
-    };
-    collect(id);
+    if (viewerOnly(pages[id]?.workspace)) return;
+    const ids = pagesToRestore(pages, id);
+    // Brought back while its parent is still in the trash (or gone): it would
+    // otherwise come back somewhere nobody can see it, so it moves to the top.
+    const parent = pages[id]?.parent ?? '';
+    const strand = !!parent && (!pages[parent] || pages[parent].trashed);
+    const patchFor = (rid: string): Partial<Page> => ({ trashed: false, trashedWith: '', ...(rid === id && strand ? { parent: '' } : {}) });
 
     set((s) => {
       const next = { ...s.pages };
-      for (const rid of ids) if (next[rid]) next[rid] = { ...next[rid], trashed: false };
+      for (const rid of ids) if (next[rid]) next[rid] = { ...next[rid], ...patchFor(rid) };
       return { pages: next, activePageId: id };
     });
 
     markFlowsDirty(); // and start again on restore
     for (const rid of ids) {
-      pagesApi.update(rid, { trashed: false }).catch((err) => {
+      pagesApi.update(rid, patchFor(rid)).catch((err) => {
         console.error('[data] restorePage failed for', rid, err);
         if (navigator.onLine) void get().hydrate();
       });
     }
   },
 
-  deletePage: async (id) => {
+  deletePage: async (id, opts) => {
+    if (viewerOnly(get().pages[id]?.workspace, opts?.quiet)) return false;
     // Collect descendants client-side and delete deepest-first.
     const pages = get().pages;
-    const toRemove: string[] = [];
-    const collect = (pid: string) => {
-      for (const p of Object.values(pages)) if (p.parent === pid) collect(p.id);
-      toRemove.push(pid);
+    const { remove: toRemove, rehome, home } = pagesToDelete(pages, id);
+    const myId = (pb.authStore.record?.id as string) ?? '';
+    const ws = useWorkspace.getState();
+    const mayDelete = (rid: string) => {
+      const p = pages[rid];
+      return !p || p.owner === myId || ws.myRole(p.workspace || undefined) === 'admin';
     };
-    collect(id);
+    if (!toRemove.every(mayDelete)) {
+      if (!opts?.quiet) toast('Only the person who made a page, or an admin, can delete it for good. It stays in the trash.', 'error');
+      return false;
+    }
 
     // Tables embedded in (or backing) the pages being permanently deleted, so we
     // can clean up the ones nothing else references once the pages are gone.
@@ -3612,6 +3799,24 @@ export const useData = create<DataState>((set, get) => ({
       if (!p) continue;
       candidateTables.push(...extractTableIds(p.content));
       if (p.kanban?.tableId) candidateTables.push(p.kanban.tableId);
+    }
+
+    // Pages under it that are not going with it move out first; if that fails
+    // nothing is deleted, so a live page can never go down with a trashed parent.
+    if (rehome.length) {
+      try {
+        await Promise.all(rehome.map((rid) => pagesApi.update(rid, { parent: home })));
+      } catch (err) {
+        console.error('[data] deletePage could not move sub-pages out first', err);
+        if (!opts?.quiet) toast('Could not delete it: some pages inside it are still in use and could not be moved out. Nothing was deleted.', 'error');
+        if (navigator.onLine) void get().hydrate();
+        return false;
+      }
+      set((s) => {
+        const next = { ...s.pages };
+        for (const rid of rehome) if (next[rid]) next[rid] = { ...next[rid], parent: home };
+        return { pages: next };
+      });
     }
 
     // Optimistic local removal.
@@ -3629,24 +3834,26 @@ export const useData = create<DataState>((set, get) => ({
       return { pages: next, activePageId: active };
     });
 
-    // The pages are gone from the store now, so anything no longer referenced is
-    // an orphan, delete those tables and their rows.
-    get().gcOrphanTables(candidateTables);
-
     for (const rid of toRemove) {
       try {
         await pagesApi.remove(rid);
       } catch (err) {
         console.error('[data] deletePage failed for', rid, err);
         if (navigator.onLine) void get().hydrate();
-        break;
+        return false;
       }
     }
+    // Only once every page is gone on the server: anything no longer referenced
+    // is an orphan, so delete those tables and their rows.
+    get().gcOrphanTables(candidateTables);
+    return true;
   },
 
   emptyTrash: async () => {
     // Each root cascades to its trashed subtree, so deleting the roots clears all.
-    for (const root of selectTrashRoots(get().pages)) await get().deletePage(root.id);
+    let kept = 0;
+    for (const root of selectTrashRoots(get().pages)) if (!(await get().deletePage(root.id, { quiet: true }))) kept++;
+    if (kept) toast(`${kept} ${kept === 1 ? 'page belongs' : 'pages belong'} to someone else and stayed in the trash. Its owner or an admin can delete it.`, 'error');
   },
 
   sweepOldTrash: async (maxAgeDays) => {
@@ -3655,11 +3862,13 @@ export const useData = create<DataState>((set, get) => ({
       const t = new Date(p.updated).getTime();
       return Number.isFinite(t) && t < cutoff; // trashing updates the record, so `updated` is when it was trashed
     });
-    for (const p of stale) await get().deletePage(p.id);
-    return stale.length;
+    let removed = 0;
+    for (const p of stale) if (await get().deletePage(p.id, { quiet: true })) removed++;
+    return removed;
   },
 
   renamePage: (id, title) => {
+    if (viewerOnly(get().pages[id]?.workspace)) return;
     set((s) => {
       const page = s.pages[id];
       if (!page) return s;
@@ -3710,6 +3919,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   setPageIcon: (id, icon) => {
+    if (viewerOnly(get().pages[id]?.workspace)) return;
     set((s) => {
       const page = s.pages[id];
       if (!page) return s;
@@ -3733,6 +3943,7 @@ export const useData = create<DataState>((set, get) => ({
   bumpPageCollab: (pageId) => set((s) => ({ pageCollabNonce: { ...s.pageCollabNonce, [pageId]: (s.pageCollabNonce[pageId] ?? 0) + 1 } })),
 
   setPageContent: (id, content) => {
+    if (viewerOnly(get().pages[id]?.workspace, true)) return;
     const prevContent = get().pages[id]?.content ?? null;
     // Data-loss guards. Page content is always a doc object or an `enc:` envelope
     // string, never null. And an encrypted page must never be replaced by an empty
@@ -4061,6 +4272,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   movePage: (id, newParentId, newOrder) => {
+    if (viewerOnly(get().pages[id]?.workspace)) return;
     const before = get().pages[id];
     const prevParent = before?.parent ?? '';
     const prevOrder = before?.order ?? 0;
@@ -4167,6 +4379,8 @@ export const useData = create<DataState>((set, get) => ({
   // --- tables -------------------------------------------------------------
 
   createTable: async (name) => {
+    if (viewerOnly()) return null;
+    if (offlineOnly('New tables')) return null;
     const colA = uid('c');
     const colB = uid('c');
     const columns: Column[] = [
@@ -4191,6 +4405,7 @@ export const useData = create<DataState>((set, get) => ({
   // columns from the header row with types inferred, rows from the data. Reuses
   // the CSV import planner so a numeric column becomes a number, etc.
   createTableFromData: async (name, headers, rows) => {
+    if (viewerOnly()) return null;
     try {
       const ws = activeWsForWrite();
       const { newColumns, resolve } = planImport([], { headers, rows });
@@ -4218,10 +4433,11 @@ export const useData = create<DataState>((set, get) => ({
   // column, etc. The matching view config is persisted so the embed opens in
   // that view rather than the grid.
   createTablePreset: async (preset) => {
+    if (viewerOnly()) return null;
     const { columns, view } = buildTablePreset(preset);
     try {
       const ws = activeWsForWrite();
-      const table = await tablesApi.create({ name: 'Untitled table', columns, workspace: ws });
+      const table = await tablesApi.create({ name: PRESET_TABLE_NAMES[preset] ?? 'Untitled table', columns, workspace: ws });
       set((s) => ({ tables: { ...s.tables, [table.id]: { ...table, views: view } } }));
       saveViewConfig(table.id, view); // localStorage fallback
       get().setTableView(table.id, view); // server (synced), tolerant if field absent
@@ -4291,6 +4507,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   renameTable: (id, name) => {
+    if (viewerOnly(get().tables[id]?.workspace)) return;
     set((s) => {
       const tbl = s.tables[id];
       if (!tbl) return s;
@@ -4357,6 +4574,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   addColumn: (tableId, type) => {
+    if (viewerOnly(get().tables[tableId]?.workspace)) return;
     let nextColumns: Column[] = [];
     set((s) => {
       const tbl = s.tables[tableId];
@@ -4390,7 +4608,7 @@ export const useData = create<DataState>((set, get) => ({
     let columnsChanged = false;
     if (replace) {
       const existing = Object.values(get().rows).filter((r) => r.table === tableId).map((r) => r.id);
-      for (const id of existing) await get().deleteRow(id);
+      for (const id of existing) await get().deleteRow(id, { quiet: true });
 
       const headerSet = new Set(parsed.headers.map((h) => h.trim().toLowerCase()).filter(Boolean));
       const cur = get().tables[tableId];
@@ -4465,7 +4683,7 @@ export const useData = create<DataState>((set, get) => ({
     // Undo of a replace-import: wipe the just-imported rows, put the old columns
     // + view back (guarded write, like the import), then re-add the old rows.
     const current = Object.values(get().rows).filter((r) => r.table === tableId).map((r) => r.id);
-    for (const id of current) await get().deleteRow(id);
+    for (const id of current) await get().deleteRow(id, { quiet: true });
     set((s) => {
       const t = s.tables[tableId];
       return t ? { tables: { ...s.tables, [tableId]: { ...t, columns: snap.columns, views: snap.views } } } : s;
@@ -4504,6 +4722,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   updateColumn: (tableId, columnId, patch) => {
+    if (viewerOnly(get().tables[tableId]?.workspace)) return;
     let nextColumns: Column[] = [];
     set((s) => {
       const tbl = s.tables[tableId];
@@ -4531,6 +4750,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   deleteColumn: (tableId, columnId) => {
+    if (viewerOnly(get().tables[tableId]?.workspace)) return;
     let nextColumns: Column[] = [];
     const affectedRows: TableRow[] = [];
     set((s) => {
@@ -4659,6 +4879,8 @@ export const useData = create<DataState>((set, get) => ({
   // --- rows ---------------------------------------------------------------
 
   addRow: async (tableId, initialCells, parentId = '') => {
+    if (viewerOnly(get().tables[tableId]?.workspace)) return null;
+    if (offlineOnly('New rows')) return null;
     const existing = Object.values(get().rows).filter((r) => r.table === tableId);
     const position = existing.length;
     const autoCells = automationsForRowCreated(resolveAutomations(get().tables[tableId]));
@@ -4675,6 +4897,7 @@ export const useData = create<DataState>((set, get) => ({
       updated: new Date().toISOString(),
     };
     set((s) => ({ rows: { ...s.rows, [tempId]: optimistic } }));
+    unsavedRows.add(tempId);
     try {
       const ws = get().tables[tableId]?.workspace || activeWsForWrite();
       // Encrypt the new row's cells in an encrypted workspace (falls back to the
@@ -4684,19 +4907,27 @@ export const useData = create<DataState>((set, get) => ({
       // Claim the envelope so the create echo doesn't re-lock the row we just made.
       noteOwnCellsEnvelope(row.id, cellsStore);
       if (parentId) saveRowParent(row.id, parentId); // survives the echo if the field is missing
+      let typed: Record<string, CellValue> = cells;
       set((s) => {
         const rows = { ...s.rows };
+        typed = s.rows[tempId]?.cells ?? cells;
         delete rows[tempId];
         // Keep the plaintext cells in memory (the persisted copy may be encrypted).
-        rows[row.id] = { ...hydrateRow(row), cells, cellsEnc: undefined };
+        rows[row.id] = { ...hydrateRow(row), cells: typed, cellsEnc: undefined };
         return { rows };
       });
+      unsavedRows.delete(tempId);
+      rowKeyAlias.set(row.id, tempId);
+      for (const [cid, v] of Object.entries(typed)) {
+        if (cells[cid] !== v) get().setCell(row.id, cid, v);
+      }
       // rowCreated flows fire on the real row id, unless we're already inside a
       // flow/automation (a flow that creates rows must not chain into itself).
       if (!automationRunning) runRowCreatedFlows(get, tableId, row.id, cells);
       return row.id;
     } catch (err) {
       console.error('[data] addRow failed', err);
+      unsavedRows.delete(tempId);
       set((s) => {
         const rows = { ...s.rows };
         delete rows[tempId];
@@ -4726,24 +4957,83 @@ export const useData = create<DataState>((set, get) => ({
     });
   },
 
-  deleteRow: async (rowId) => {
-    const snapshot = get().rows[rowId];
+  deleteRow: async (rowId, opts) => {
+    if (viewerOnly(get().rows[rowId]?.workspace ?? get().tables[get().rows[rowId]?.table ?? '']?.workspace)) return [];
+    const root = get().rows[rowId];
+    if (!root) return [];
+    const all = Object.values(get().rows).filter((r) => r.table === root.table);
+    const subtree: TableRow[] = [root];
+    for (let i = 0; i < subtree.length; i++) {
+      for (const r of all) if (r.parent === subtree[i].id && !subtree.includes(r)) subtree.push(r);
+    }
+    const ids = new Set(subtree.map((r) => r.id));
     set((s) => {
       const rows = { ...s.rows };
-      delete rows[rowId];
+      for (const id of ids) delete rows[id];
       return { rows };
     });
-    // rowDeleted flows run on the pre-delete snapshot, not inside another flow.
-    if (snapshot && !automationRunning) runRowDeletedFlows(get, snapshot.table, rowId, snapshot.cells);
-    try {
-      await rowsApi.remove(rowId);
-    } catch (err) {
-      console.error('[data] deleteRow failed', err);
-      if (snapshot) set((s) => ({ rows: { ...s.rows, [rowId]: snapshot } }));
+    if (!automationRunning) for (const r of subtree) runRowDeletedFlows(get, r.table, r.id, r.cells);
+    const removed: TableRow[] = [];
+    for (const r of [...subtree].reverse()) {
+      try {
+        await rowsApi.remove(r.id);
+        removed.push(r);
+      } catch (err) {
+        console.error('[data] deleteRow failed', err);
+        set((s) => ({ rows: { ...s.rows, [r.id]: r } }));
+      }
     }
+    const gone = subtree.filter((r) => removed.includes(r));
+    if (!opts?.quiet && gone.length) {
+      const extra = gone.length - 1;
+      toastWithAction(extra > 0 ? `Removed a row and ${extra} ${extra === 1 ? 'sub-row' : 'sub-rows'}` : 'Removed a row', {
+        label: 'Undo',
+        run: () => void get().restoreRows(gone),
+      });
+    }
+    return gone;
+  },
+
+  restoreRows: async (snapshots) => {
+    const byId = new Set(snapshots.map((r) => r.id));
+    const ordered: TableRow[] = [];
+    const placed = new Set<string>();
+    while (ordered.length < snapshots.length) {
+      const next = snapshots.filter((r) => !placed.has(r.id) && (!byId.has(r.parent) || placed.has(r.parent)));
+      if (!next.length) break;
+      for (const r of next) {
+        ordered.push(r);
+        placed.add(r.id);
+      }
+    }
+    for (const r of ordered) {
+      const ws = r.workspace ?? get().tables[r.table]?.workspace ?? '';
+      const cols = get().tables[r.table]?.columns ?? [];
+      const cells = r.cellsEnc ? { ...r.cells, [ENC_KEY]: r.cellsEnc } : await cellsToPersist(ws, r.cells, cols);
+      let content: object | string | null = r.contentEnc ?? r.content ?? null;
+      if (!r.contentEnc && r.content && useWorkspace.getState().encryptedEnabled(ws) && encryptRowBodiesEnabled()) {
+        content = await useWorkspaceKeys.getState().encryptForWorkspace(ws, r.content);
+      }
+      if (cells == null || content === undefined || (r.content && content == null)) {
+        toast('Could not put the row back while this workspace is locked. Unlock it and try again.', 'error');
+        return false;
+      }
+      try {
+        noteOwnCellsEnvelope(r.id, cells);
+        if (typeof content === 'string') noteOwnRowBodyEnvelope(r.id, content);
+        await rowsApi.create({ id: r.id, table: r.table, workspace: ws || undefined, parent: r.parent, cells, position: r.position, content, reactions: r.reactions ?? null });
+        set((s) => ({ rows: { ...s.rows, [r.id]: r } }));
+      } catch (err) {
+        console.error('[data] restoreRows failed', err);
+        toast('Could not put the row back.', 'error');
+        return false;
+      }
+    }
+    return true;
   },
 
   setCell: (rowId, columnId, value) => {
+    if (viewerOnly(get().rows[rowId]?.workspace ?? get().tables[get().rows[rowId]?.table ?? '']?.workspace)) return;
     // Refuse to edit a row whose cells are still encrypted (not decrypted yet),
     // writing now would overwrite the ciphertext and lose the other cells.
     if (get().rows[rowId]?.cellsEnc) return;
@@ -4755,24 +5045,53 @@ export const useData = create<DataState>((set, get) => ({
       nextCells = { ...row.cells, [columnId]: value };
       return { rows: { ...s.rows, [rowId]: { ...row, cells: nextCells } } };
     });
+    if (unsavedRows.has(rowId)) return;
     const ws = get().rows[rowId]?.workspace ?? '';
     const cols = get().tables[get().rows[rowId]?.table ?? '']?.columns ?? [];
     // Guard the cells against their own echo: hold the typed values until this save
     // settles, so a trailing echo can't rewind what was just entered in a cell.
     const seq = beginWrite(rowId, 'cells');
-    debounceWrite(`cell-${rowId}`, () => {
-      void cellsToPersist(ws, nextCells, cols)
-        .then((toStore) => {
-          if (toStore == null) return; // encrypted ws + locked vault: skip, never write plaintext
-          noteOwnCellsEnvelope(rowId, toStore);
-          return rowsApi.update(rowId, { cells: toStore }).catch((err) => {
-            console.error('[data] setCell failed', err);
-            // Offline: don't refetch (it would blank/rewind the cell); just keep the
-            // optimistic value for the session. Offline edits are NOT synced back.
-            if (navigator.onLine) void get().hydrate();
+    const touched = dirtyCells.get(rowId) ?? new Set<string>();
+    touched.add(columnId);
+    dirtyCells.set(rowId, touched);
+    debounceWrite(`cell-${rowId}`, async () => {
+      const changed = [...(dirtyCells.get(rowId) ?? [])];
+      dirtyCells.delete(rowId);
+      const local = get().rows[rowId]?.cells ?? nextCells;
+      let merged = local;
+      try {
+        const fresh = await rowsApi.get(rowId);
+        let serverCells: Record<string, CellValue> | null = fresh.cells;
+        if (fresh.cellsEnc) {
+          const secret = await useWorkspaceKeys.getState().decryptForWorkspace(ws, fresh.cellsEnc);
+          serverCells = secret && typeof secret === 'object' ? { ...fresh.cells, ...(secret as Record<string, CellValue>) } : null;
+        }
+        if (serverCells) merged = mergeCells(serverCells, local, changed);
+      } catch {
+        merged = local;
+      }
+      try {
+        const toStore = await cellsToPersist(ws, merged, cols);
+        if (toStore == null) return;
+        noteOwnCellsEnvelope(rowId, toStore);
+        await rowsApi.update(rowId, { cells: toStore });
+        if (merged !== local) {
+          set((s) => {
+            const row = s.rows[rowId];
+            if (!row) return s;
+            const pending = dirtyCells.get(rowId);
+            const cells = { ...merged };
+            if (pending) for (const k of pending) if (k in row.cells) cells[k] = row.cells[k];
+            return { rows: { ...s.rows, [rowId]: { ...row, cells } } };
           });
-        })
-        .finally(() => endWrite(rowId, 'cells', seq));
+        }
+      } catch (err) {
+        console.error('[data] setCell failed', err);
+        for (const k of changed) (dirtyCells.get(rowId) ?? dirtyCells.set(rowId, new Set()).get(rowId)!).add(k);
+        if (navigator.onLine) void get().hydrate();
+      } finally {
+        endWrite(rowId, 'cells', seq);
+      }
     });
 
     // Fire field-change automations (guarded against recursion).
@@ -4867,6 +5186,7 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   setRowContent: (rowId, content) => {
+    if (viewerOnly(get().rows[rowId]?.workspace ?? get().tables[get().rows[rowId]?.table ?? '']?.workspace)) return;
     // Refuse a row whose body is still ciphertext we haven't opened. The row-detail
     // editor mounts with a null doc and reports an empty document on mount, so
     // without this the first render of an undecrypted card would save that emptiness

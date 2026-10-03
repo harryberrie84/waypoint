@@ -65,7 +65,7 @@ function FileView({ node, updateAttributes, editor }: NodeViewProps) {
   return (
     <NodeViewWrapper className="my-3" contentEditable={false}>
       <input ref={inputRef} type="file" className="hidden" onChange={(e) => pick(e.target.files?.[0])} />
-      <div className="flex items-center gap-3 rounded-xl border border-paper-line bg-paper p-3 dark:border-coal-line dark:bg-coal-panel">
+      <div className="flex items-center gap-3 rounded-xl border border-paper-line bg-paper-panel/40 p-3 dark:border-coal-line dark:bg-coal/40">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-clay-wash text-clay dark:bg-clay/15">
           <Icon className="h-4 w-4" />
         </span>

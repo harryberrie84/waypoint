@@ -32,3 +32,16 @@ export function parseInlineMarkdown(text: string): InlineNode[] {
   if (last < text.length) out.push({ type: 'text', text: text.slice(last) });
   return out;
 }
+
+// Multi-line text with no blank lines is either code (keep it verbatim in a code
+// block) or ordinary lines, like an address or a list copied from a note (keep them
+// as lines). It used to always become code. Code is called when enough of the lines
+// carry the marks code has and prose does not.
+const CODE_LINE = /^(\t| {2,})\S|[;{}]\s*$|=>|::|<\/?[a-z][\w-]*[\s>]|^\s*(\$|>>>|#!)\s?|^\s*(def|function|const|let|var|import|export|return|class|if|for|while|SELECT|UPDATE)\b|\b\w+\([^)]*\)\s*[;{:]?\s*$/;
+
+export function looksLikeCode(text: string): boolean {
+  const lines = text.split('\n').filter((l) => l.trim());
+  if (lines.length < 2) return false;
+  const hits = lines.filter((l) => CODE_LINE.test(l)).length;
+  return hits / lines.length >= 0.4;
+}

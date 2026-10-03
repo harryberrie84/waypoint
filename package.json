@@ -1,7 +1,7 @@
 {
   "name": "waypoint",
   "description": "Self-hosted, end-to-end-encrypted workspace: docs, databases, maps, and real-time collaboration on one PocketBase binary.",
-  "version": "0.207.1",
+  "version": "0.208.0",
   "license": "AGPL-3.0-only",
   "repository": "github:harryberrie84/waypoint",
   "homepage": "https://github.com/harryberrie84/waypoint",
@@ -12,6 +12,9 @@
     "lint": "oxlint",
     "check": "node scripts/check.mjs",
     "schema:gen": "node scripts/gen-schema.mjs",
+    "test:server": "node --import ./scripts/register.mjs tests/run.mjs server",
+    "test:e2e": "node --import ./scripts/register.mjs tests/run.mjs e2e",
+    "predeploy": "node scripts/check.mjs && node --import ./scripts/register.mjs tests/run.mjs server e2e",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -47,6 +50,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "^10.5.1",
     "oxlint": "^1.69.0",
+    "playwright": "1.63.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.2",

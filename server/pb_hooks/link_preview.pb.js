@@ -34,8 +34,11 @@ routerAdd(
     if (!m) return c.json(400, { message: "url must be http or https" });
     const authority = m[2];
     if (authority.indexOf("@") !== -1) return c.json(400, { message: "url must not carry credentials" });
-    const host = authority.split(":")[0];
-    if (isPrivateHost(host)) return c.json(400, { message: "that address is not reachable from here" });
+    if (authority.charAt(0) === "[") return c.json(400, { message: "that address is not reachable from here" });
+    const host = authority.split(":")[0].toLowerCase();
+    if (/\.$/.test(host) || isOddNumericHost(host) || isPrivateHost(host)) {
+      return c.json(400, { message: "that address is not reachable from here" });
+    }
 
     let res;
     try {
@@ -69,6 +72,16 @@ routerAdd(
     return c.json(200, meta);
 
     // --- helpers ---------------------------------------------------------------
+    function isOddNumericHost(h) {
+      if (/^0x/i.test(h) || /\.0x/i.test(h)) return true;
+      if (!/^[0-9.]+$/.test(h)) return false;
+      const parts = h.split(".");
+      if (parts.length !== 4) return true;
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i] === "" || (parts[i].length > 1 && parts[i].charAt(0) === "0") || Number(parts[i]) > 255) return true;
+      }
+      return false;
+    }
     function isPrivateHost(host) {
       const h = host.toLowerCase();
       if (!h) return true;
@@ -102,11 +115,11 @@ routerAdd(
       return "";
     }
     function attr(tag, name) {
-      const m = new RegExp(name + '\s*=\s*"([^"]*)"', "i").exec(tag) || new RegExp(name + "\s*=\s*'([^']*)'", "i").exec(tag);
+      const m = new RegExp(name + '\\s*=\\s*"([^"]*)"', "i").exec(tag) || new RegExp(name + "\\s*=\\s*'([^']*)'", "i").exec(tag);
       return m ? m[1] : "";
     }
     function tagText(html, name) {
-      const m = new RegExp("<" + name + "[^>]*>([\s\S]*?)</" + name + ">", "i").exec(html);
+      const m = new RegExp("<" + name + "[^>]*>([\\s\\S]*?)</" + name + ">", "i").exec(html);
       return m ? decode(m[1].replace(/\s+/g, " ").trim()) : "";
     }
     // A relative og:image is common. Resolve it against the page it came from,

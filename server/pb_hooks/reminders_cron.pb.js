@@ -24,16 +24,21 @@ cronAdd("reminders", "*/10 * * * *", () => {
   const fromName = settings.meta.senderName || "Waypoint";
   const appUrl = settings.meta.appUrl || "";
 
-  const parseJSON = (v, fallback) => {
-    if (typeof v === "string") { try { return JSON.parse(v); } catch (_) { return fallback; } }
-    return v == null ? fallback : v;
+  const readJSON = (record, field, fallback) => {
+    try {
+      const v = JSON.parse(record.getString(field) || "null");
+      return v == null ? fallback : v;
+    } catch (_) {
+      return fallback;
+    }
   };
+  const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
   // tableId -> { reminderCols: [{id, lead, name}], personCols: [ids], owner }
   const tables = $app.dao().findRecordsByFilter("tables", "id != ''", "", 0, 0);
   const meta = {};
   tables.forEach((t) => {
-    const cols = parseJSON(t.get("columns"), []) || [];
+    const cols = readJSON(t, "columns", []) || [];
     const reminderCols = cols.filter((c) => c.type === "reminder")
       .map((c) => ({ id: c.id, lead: c.reminderLead || "at", name: c.name || "Reminder" }));
     if (!reminderCols.length) return;
@@ -41,10 +46,20 @@ cronAdd("reminders", "*/10 * * * *", () => {
       reminderCols: reminderCols,
       personCols: cols.filter((c) => c.type === "person").map((c) => c.id),
       titleCol: cols.length ? cols[0].id : null,
-      owner: t.get("owner"),
+      owner: t.getString("owner"),
+      workspace: t.getString("workspace"),
     };
   });
 
+  const isMember = (wsId, userId) => {
+    if (!wsId) return false;
+    try {
+      $app.dao().findFirstRecordByFilter("workspace_members", "workspace = {:w} && user = {:u}", { w: wsId, u: String(userId) });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
   const emailFor = (userId) => {
     if (!userId) return null;
     let user;
@@ -58,7 +73,7 @@ cronAdd("reminders", "*/10 * * * *", () => {
     const rows = $app.dao().findRecordsByFilter("table_rows", "table = {:t}", "", 0, 0, { t: tableId });
 
     rows.forEach((row) => {
-      const cells = parseJSON(row.get("cells"), null);
+      const cells = readJSON(row, "cells", null);
       if (!cells) return;
       let dirty = false;
 
@@ -76,23 +91,28 @@ cronAdd("reminders", "*/10 * * * *", () => {
         m.personCols.forEach((pid) => {
           const v = cells[pid];
           const ids = Array.isArray(v) ? v : v ? [v] : [];
-          ids.forEach((id) => { const e = emailFor(id); if (e) recipients[e] = true; });
+          ids.forEach((id) => {
+            if (!isMember(m.workspace, id)) return;
+            const e = emailFor(id);
+            if (e) recipients[e] = true;
+          });
         });
-        if (Object.keys(recipients).length === 0) {
+        if (Object.keys(recipients).length === 0 && isMember(m.workspace, m.owner)) {
           const e = emailFor(m.owner);
           if (e) recipients[e] = true;
         }
         const to = Object.keys(recipients);
         if (!to.length) { cells[notedKey] = raw; dirty = true; return; } // nobody to mail; don't retry forever
 
-        const title = (m.titleCol && cells[m.titleCol]) || "a row";
+        const rawTitle = m.titleCol ? cells[m.titleCol] : "";
+        const title = esc(typeof rawTitle === "string" && rawTitle ? rawTitle : "a row");
         const message = new MailerMessage({
           from: { address: fromAddress, name: fromName },
           to: to.map((address) => ({ address: address })),
           subject: `Reminder · ${col.name}`,
           html:
-            `<p><strong>${title}</strong>, ${col.name}</p>` +
-            `<p>Due ${raw}.</p>` +
+            `<p><strong>${title}</strong>, ${esc(col.name)}</p>` +
+            `<p>Due ${esc(raw)}.</p>` +
             (appUrl ? `<p><a href="${appUrl}">Open Waypoint</a></p>` : ""),
         });
         try {

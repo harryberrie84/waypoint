@@ -70,7 +70,7 @@ function GalleryView({ node, updateAttributes, editor }: NodeViewProps) {
   return (
     <NodeViewWrapper className="my-3" contentEditable={false}>
       <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => void pick(e.target.files)} />
-      <div className="overflow-hidden rounded-2xl border border-paper-line bg-paper-panel/30 dark:border-coal-line dark:bg-coal/30">
+      <div className="overflow-hidden rounded-xl border border-paper-line bg-paper-panel/40 dark:border-coal-line dark:bg-coal/40">
         <div className="flex items-center gap-2 border-b border-paper-line px-3 py-2 dark:border-coal-line">
           <Images className="h-4 w-4 shrink-0 text-clay" />
           <span className="text-sm font-medium text-ink dark:text-coal-text">Gallery</span>

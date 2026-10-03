@@ -136,14 +136,14 @@ function BudgetSummaryView({ node, updateAttributes, editor }: NodeViewProps) {
   const nothingToSettle = nets.length === 0 && transfers.length === 0;
 
   return (
-    <NodeViewWrapper className="my-4" contentEditable={false}>
+    <NodeViewWrapper className="my-3" contentEditable={false}>
       <div className="rounded-xl border border-paper-line bg-paper-panel/40 p-3 dark:border-coal-line dark:bg-coal/40">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-medium text-ink-faint dark:text-coal-soft">
-            <Scale className="h-3.5 w-3.5 text-clay" /> settlement
+          <div className="flex items-center gap-2 text-sm font-semibold text-ink dark:text-coal-text">
+            <Scale className="h-4 w-4 text-clay" /> Settle up
           </div>
           <label className="flex items-center gap-1 text-xs text-ink-faint dark:text-coal-soft">
-            settle in
+            Settle in
             <select
               value={PICKABLE.includes(base.toUpperCase()) ? base.toUpperCase() : ''}
               onChange={(e) => {
@@ -164,7 +164,7 @@ function BudgetSummaryView({ node, updateAttributes, editor }: NodeViewProps) {
         </div>
 
         {nothingToSettle ? (
-          <p className="text-sm text-ink-faint dark:text-coal-soft">nothing to settle yet.</p>
+          <p className="text-sm text-ink-faint dark:text-coal-soft">Nothing to settle yet. Add who paid and who shares each expense.</p>
         ) : (
           <>
             <div className="flex flex-wrap gap-x-4 gap-y-1">

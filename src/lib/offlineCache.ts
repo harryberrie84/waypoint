@@ -10,7 +10,7 @@
 // Every call is best-effort and swallows its own errors: the cache must never be
 // able to break a normal online load.
 
-import { idbGet, idbSet } from './idb';
+import { idbDel, idbGet, idbSet } from './idb';
 import type { Page, TableData, TableRow } from '../types';
 
 export interface CachedDataset {
@@ -19,21 +19,34 @@ export interface CachedDataset {
   rows: TableRow[];
 }
 
+interface StoredDataset extends CachedDataset {
+  owner?: string;
+}
+
 const KEY = 'dataset';
 
-export async function saveDataset(d: CachedDataset): Promise<void> {
+export async function saveDataset(owner: string, d: CachedDataset): Promise<void> {
   try {
-    await idbSet(KEY, d);
+    await idbSet(KEY, { ...d, owner } satisfies StoredDataset);
   } catch {
     // A full disk / private-mode quota / no IndexedDB: the cache is a bonus, not
     // load-bearing, so a failure here is silently fine.
   }
 }
 
-export async function loadDataset(): Promise<CachedDataset | null> {
+export async function loadDataset(owner: string): Promise<CachedDataset | null> {
   try {
-    return (await idbGet<CachedDataset>(KEY)) ?? null;
+    const d = await idbGet<StoredDataset>(KEY);
+    if (!d || !owner || d.owner !== owner) return null;
+    return { pages: d.pages, tables: d.tables, rows: d.rows };
   } catch {
     return null;
+  }
+}
+
+export async function clearDataset(): Promise<void> {
+  try {
+    await idbDel(KEY);
+  } catch {
   }
 }

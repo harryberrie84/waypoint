@@ -120,7 +120,8 @@ export function InlineCommentThread({
         });
       })
       .then((fn) => {
-        unsub = fn;
+        if (cancelled) void fn();
+        else unsub = fn;
       })
       .catch(() => {});
     return () => {

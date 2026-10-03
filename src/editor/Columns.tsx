@@ -167,8 +167,13 @@ export const Column = Node.create({
   renderHTML({ HTMLAttributes }) {
     return ['div', mergeAttributes(HTMLAttributes, { 'data-column': '' }), 0];
   },
+  // The renderer wraps ColumnView in its own element, and THAT is the flex child of
+  // the row, so the width weight goes on the wrapper too (updated on every resize).
   addNodeView() {
-    return ReactNodeViewRenderer(ColumnView);
+    return ReactNodeViewRenderer(ColumnView, {
+      className: 'col-cell',
+      attrs: ({ node }) => ({ style: `--col-grow: ${(node.attrs.width as number) || 1}` }),
+    });
   },
 });
 

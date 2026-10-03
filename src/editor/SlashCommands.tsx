@@ -1,5 +1,6 @@
 import { Extension } from '@tiptap/core';
-import Suggestion from '@tiptap/suggestion';
+import { holdPosition } from './heldPosition';
+import Suggestion, { exitSuggestion } from '@tiptap/suggestion';
 import type { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion';
 import { ReactRenderer } from '@tiptap/react';
 import type { Editor, Range } from '@tiptap/core';
@@ -119,30 +120,29 @@ function insertColumns(editor: Editor, range: Range, count: number) {
 
 function insertPresetTable(editor: Editor, range: Range, preset: TablePreset) {
   editor.chain().focus().deleteRange(range).run();
+  const spot = holdPosition(editor);
   void useData
     .getState()
     .createTablePreset(preset)
     .then((tableId) => {
-      if (tableId) {
-        editor.chain().focus().insertContent({ type: 'tableEmbed', attrs: { tableId } }).run();
-      }
+      if (tableId) spot.insert({ type: 'tableEmbed', attrs: { tableId } });
+      else spot.release();
     });
 }
 
 // Budget = the expense grid plus a live settlement readout bound to the same table.
 function insertBudget(editor: Editor, range: Range) {
   editor.chain().focus().deleteRange(range).run();
+  const spot = holdPosition(editor);
   void useData
     .getState()
     .createTablePreset('budget')
     .then((tableId) => {
-      if (!tableId) return;
-      editor
-        .chain()
-        .focus()
-        .insertContent({ type: 'tableEmbed', attrs: { tableId } })
-        .insertContent({ type: 'budgetSummary', attrs: { tableId, base: getBaseCurrency() } })
-        .run();
+      if (!tableId) return spot.release();
+      spot.insert([
+        { type: 'tableEmbed', attrs: { tableId } },
+        { type: 'budgetSummary', attrs: { tableId, base: getBaseCurrency() } },
+      ]);
     });
 }
 
@@ -150,13 +150,14 @@ function insertBudget(editor: Editor, range: Range) {
 // plumbing, so we drop the auto-seeded blank row and don't embed the grid.
 function insertPoll(editor: Editor, range: Range) {
   editor.chain().focus().deleteRange(range).run();
+  const spot = holdPosition(editor);
   void useData
     .getState()
     .createTablePreset('poll')
     .then((tableId) => {
-      if (!tableId) return;
-      for (const r of selectRowsForTable(useData.getState().rows, tableId)) void useData.getState().deleteRow(r.id);
-      editor.chain().focus().insertContent({ type: 'pollBlock', attrs: { tableId, mode: 'single' } }).run();
+      if (!tableId) return spot.release();
+      for (const r of selectRowsForTable(useData.getState().rows, tableId)) void useData.getState().deleteRow(r.id, { quiet: true });
+      spot.insert({ type: 'pollBlock', attrs: { tableId, mode: 'single' } });
     });
 }
 
@@ -164,14 +165,13 @@ function insertPoll(editor: Editor, range: Range) {
 // order on the page (relations are live between them, see createCampaignBundle).
 function insertCampaign(editor: Editor, range: Range) {
   editor.chain().focus().deleteRange(range).run();
+  const spot = holdPosition(editor);
   void useData
     .getState()
     .createCampaignBundle()
     .then((ids) => {
-      if (!ids.length) return;
-      let chain = editor.chain().focus();
-      for (const tableId of ids) chain = chain.insertContent({ type: 'tableEmbed', attrs: { tableId } });
-      chain.run();
+      if (!ids.length) return spot.release();
+      spot.insert(ids.map((tableId) => ({ type: 'tableEmbed', attrs: { tableId } })));
     });
 }
 
@@ -202,13 +202,14 @@ function rollItems(exprPart: string): CommandItem[] {
 // every /form:<key> shares (and ripples) one schema.
 function insertForm(editor: Editor, range: Range, key: string) {
   editor.chain().focus().deleteRange(range).run();
+  const spot = holdPosition(editor);
   void (async () => {
     const data = useData.getState();
     const tableId = await data.findOrCreateFormTable(key);
-    if (!tableId) return;
+    if (!tableId) return spot.release();
     const rowId = await data.addRow(tableId);
-    if (!rowId) return;
-    editor.chain().focus().insertContent({ type: 'formBlock', attrs: { tableId, rowId } }).run();
+    if (!rowId) return spot.release();
+    spot.insert({ type: 'formBlock', attrs: { tableId, rowId } });
   })();
 }
 
@@ -409,19 +410,22 @@ const COMMANDS: CommandItem[] = [
     keywords: ['image', 'picture', 'photo', 'img', 'upload', 'media'],
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).run();
+      const spot = holdPosition(editor);
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
+      input.addEventListener('cancel', () => spot.release());
       input.onchange = () => {
         const file = input.files?.[0];
-        if (!file) return;
+        if (!file) return spot.release();
         // Full-size upload first; fall back to a downscaled inline image.
         void (async () => {
           try {
             const url = await uploadsApi.upload(file);
             const src = url ?? (await processImageFile(file));
-            editor.chain().focus().insertContent({ type: 'image', attrs: { src } }).run();
+            spot.insert({ type: 'image', attrs: { src } });
           } catch (err) {
+            spot.release();
             if (err instanceof ImageTooLargeError) toast(err.message, 'error');
             else console.error('[editor] image upload failed', err);
           }
@@ -437,16 +441,19 @@ const COMMANDS: CommandItem[] = [
     keywords: ['file', 'attachment', 'attach', 'pdf', 'ticket', 'boarding', 'pass', 'doc', 'upload', 'download'],
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).run();
+      const spot = holdPosition(editor);
       const input = document.createElement('input');
       input.type = 'file';
+      input.addEventListener('cancel', () => spot.release());
       input.onchange = () => {
         const file = input.files?.[0];
-        if (!file) return;
+        if (!file) return spot.release();
         void processAttachmentFile(file)
           .then((a) => {
-            editor.chain().focus().insertContent({ type: 'fileBlock', attrs: a }).run();
+            spot.insert({ type: 'fileBlock', attrs: a });
           })
           .catch((err) => {
+            spot.release();
             if (err instanceof FileTooLargeError) toast(err.message, 'error');
             else console.error('[editor] file upload failed', err);
           });
@@ -1058,7 +1065,7 @@ const CommandMenu = forwardRef(function CommandMenu(
         setSelected((s) => (s + 1) % props.items.length);
         return true;
       }
-      if (event.key === 'Enter') {
+      if (event.key === 'Enter' && props.items.length > 0) {
         pick(selected);
         return true;
       }
@@ -1080,7 +1087,7 @@ const CommandMenu = forwardRef(function CommandMenu(
         const Icon = item.icon;
         return (
           <button
-            key={item.title}
+            key={`${item.title}-${item.subtitle}`}
             type="button"
             onMouseEnter={() => setSelected(i)}
             onClick={() => pick(i)}
@@ -1106,6 +1113,7 @@ const CommandMenu = forwardRef(function CommandMenu(
 function makeRenderer() {
   let component: ReactRenderer<MenuRef, SuggestionProps<CommandItem>> | null = null;
   let popup: HTMLDivElement | null = null;
+  let offOutside: (() => void) | null = null;
 
   const place = (clientRect: (() => DOMRect | null) | null | undefined) => {
     if (!popup || !clientRect) return;
@@ -1139,6 +1147,14 @@ function makeRenderer() {
       popup.appendChild(component.element);
       document.body.appendChild(popup);
       place(props.clientRect);
+      const view = props.editor.view;
+      const onDown = (e: PointerEvent) => {
+        const t = e.target as Node | null;
+        if (!t || popup?.contains(t) || view.dom.contains(t)) return;
+        exitSuggestion(view);
+      };
+      document.addEventListener('pointerdown', onDown, true);
+      offOutside = () => document.removeEventListener('pointerdown', onDown, true);
     },
     onUpdate: (props: SuggestionProps<CommandItem>) => {
       component?.updateProps(props);
@@ -1149,6 +1165,8 @@ function makeRenderer() {
       return component?.ref?.onKeyDown(props) ?? false;
     },
     onExit: () => {
+      offOutside?.();
+      offOutside = null;
       popup?.remove();
       popup = null;
       component?.destroy();
@@ -1202,6 +1220,12 @@ export const SlashCommands = Extension.create({
           );
         },
         render: makeRenderer,
+        allow: ({ state, range }) => {
+          const query = state.doc.textBetween(range.from, range.to).slice(1);
+          const colon = query.indexOf(':');
+          const head = colon === -1 ? query : query.slice(0, colon);
+          return !/\s/.test(head);
+        },
       }),
     ];
   },

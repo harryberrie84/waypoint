@@ -152,7 +152,7 @@ function FormBlockView({ node, editor, deleteNode }: NodeViewProps) {
                   type="button"
                   onClick={addField}
                   disabled={!fieldName.trim()}
-                  className="w-full rounded-md bg-clay px-2 py-1 text-sm font-medium text-white hover:bg-clay/90 disabled:opacity-50"
+                  className="w-full rounded-lg bg-clay px-2 py-1 text-sm font-medium text-white hover:bg-clay/90 disabled:opacity-50"
                 >
                   add
                 </button>

@@ -19,14 +19,16 @@ import { dirname, join } from 'node:path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA = join(ROOT, 'pocketbase', 'schema.json');
 const OUT = join(ROOT, 'server', 'pb_migrations', '1699999999_bootstrap.js');
+const RULES_OUT = join(ROOT, 'server', 'pb_migrations', '1700000015_narrow_write_rules.js');
 
 // The incremental migrations that sit beside the bootstrap. They exist for
 // installs older than it, and on a FRESH database every collection they create
 // already exists, so they would fail on a duplicate name. The bootstrap marks
 // them applied instead. Sorted, so the generated file is byte-stable and the
 // drift gate stays meaningful.
+const RUN_ON_FRESH = ['1700000017_reset_link_to_app.js'];
 const LATER = readdirSync(join(ROOT, 'server', 'pb_migrations'))
-  .filter((f) => f.endsWith('.js') && f !== '1699999999_bootstrap.js')
+  .filter((f) => f.endsWith('.js') && f !== '1699999999_bootstrap.js' && !RUN_ON_FRESH.includes(f))
   .sort();
 const NL = String.fromCharCode(10);
 const LATER_JS = JSON.stringify(LATER, null, 4).split(NL).join(NL + '    ');
@@ -90,6 +92,23 @@ const ADD_FIELDS = {
   presence: [text('cursor', 5000), text('focus', 200)],
 };
 
+ADD_FIELDS.pages.push(bool('trashed'), text('trashedWith', 20));
+ADD_FIELDS.tables.push(json('views'), json('automations'));
+ADD_FIELDS.workspaces = [text('numberStyle', 20)];
+ADD_FIELDS.workspace_invites = [text('tokenHash', 128)];
+
+const idx = (col, field) => `CREATE INDEX \`idx_${col}_${field}\` ON \`${col}\` (\`${field}\`)`;
+const ADD_INDEXES = {
+  pages: [idx('pages', 'workspace'), idx('pages', 'parent'), idx('pages', 'updated')],
+  tables: [idx('tables', 'workspace'), idx('tables', 'updated')],
+  table_rows: [idx('table_rows', 'table'), idx('table_rows', 'workspace'), idx('table_rows', 'updated')],
+  comments: [idx('comments', 'page'), idx('comments', 'thread'), idx('comments', 'row')],
+  presence: [idx('presence', 'page'), idx('presence', 'user')],
+  workspace_invites: [idx('workspace_invites', 'email')],
+  uploads: [idx('uploads', 'workspace')],
+  file_trash: [idx('file_trash', 'workspace')],
+};
+
 // Collections the base schema never had. Rules copied from the reconciler verbatim.
 const NEW_COLLECTIONS = [
   {
@@ -131,6 +150,113 @@ const NEW_COLLECTIONS = [
   },
 ];
 
+const OLD_MEMBER_OF_NEW_WS = '@request.data.workspace.workspace_members_via_workspace.user ?= @request.auth.id';
+const WRITER = (alias, of) =>
+  `(@collection.workspace_members:${alias}.workspace ?= ${of} && @collection.workspace_members:${alias}.user ?= @request.auth.id && ` +
+  `@collection.workspace_members:${alias}.role ?!= "viewer")`;
+const MEMBER_OF_NEW_WS = WRITER('nwm', '@request.data.workspace');
+const CAN_WRITE = WRITER('wm', 'workspace');
+const CAN_WRITE_PAGE = WRITER('wpm', 'page.workspace');
+const NOT_PAGE_VIEWER = '(owner = @request.auth.id || editors:each ?= @request.auth.id || viewers:length = 0 || viewers.id != @request.auth.id)';
+const OLD_NOT_PAGE_VIEWER = '(owner = @request.auth.id || editors:each ?= @request.auth.id || viewers.id != @request.auth.id)';
+const A_ID = '@request.auth.id';
+const PAGE_READ = (a) =>
+  `@collection.pages:${a}.id ?= page && @collection.pages:${a}.workspace ?= workspace && (@collection.pages:${a}.visibility ?!= "private" || ` +
+  `@collection.pages:${a}.owner ?= ${A_ID} || @collection.pages:${a}.editors.id ?= ${A_ID} || @collection.pages:${a}.viewers.id ?= ${A_ID})`;
+const PAGE_WRITE = (a) =>
+  `@collection.pages:${a}.id ?= page && @collection.pages:${a}.workspace ?= workspace && (@collection.pages:${a}.owner ?= ${A_ID} || ` +
+  `@collection.pages:${a}.editors.id ?= ${A_ID} || (@collection.pages:${a}.visibility ?!= "private" && @collection.pages:${a}.viewers !~ ${A_ID}))`;
+const COMMENT_PAGE_READABLE = `(page.visibility != "private" || page.owner = ${A_ID} || page.editors.id ?= ${A_ID} || page.viewers.id ?= ${A_ID})`;
+const OWNER_ONLY_PAGE_FIELDS =
+  `(owner = ${A_ID} || (@request.data.owner:isset = false && @request.data.visibility:isset = false && ` +
+  '@request.data.publicToken:isset = false && @request.data.editors:isset = false && @request.data.viewers:isset = false))';
+const NOT_THE_OWNER_ROW = `(user != workspace.owner || ${A_ID} = workspace.owner)`;
+const PUBLIC_LINK = '(publicToken != "" && publicToken = @request.query.token && trashed != true)';
+const PUBLIC_LINK_V1 = '(publicToken != "" && publicToken = @request.query.token && visibility != "private" && trashed != true)';
+const OLD_PUBLIC_LINK = '(publicToken != "" && publicToken = @request.query.token)';
+const READER = `${AUTHED} && workspace != "" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id`;
+const WRITER_SCOPED = `${AUTHED} && workspace != "" && ${CAN_WRITE}`;
+const ADMIN_OF_ROW =
+  '(workspace.owner = @request.auth.id || (@collection.workspace_members:adm.workspace ?= workspace && ' +
+  '@collection.workspace_members:adm.user ?= @request.auth.id && @collection.workspace_members:adm.role ?= "admin"))';
+const TEXT_WS_MEMBER =
+  'workspace != "" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id';
+const RULES = {
+  pages: {
+    createRule: `${AUTHED} && ${CAN_WRITE}`,
+    updateRule: null,
+  },
+  tables: {
+    createRule: `${AUTHED} && ${CAN_WRITE}`,
+    updateRule: `${AUTHED} && ${CAN_WRITE} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`,
+    deleteRule: `${AUTHED} && ${CAN_WRITE}`,
+  },
+  table_rows: {
+    createRule: `${AUTHED} && ${CAN_WRITE}`,
+    updateRule: `${AUTHED} && ${CAN_WRITE} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`,
+    deleteRule: `${AUTHED} && ${CAN_WRITE}`,
+  },
+  comments: {
+    listRule: `${AUTHED} && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id && ${COMMENT_PAGE_READABLE}`,
+    viewRule: `${AUTHED} && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id && ${COMMENT_PAGE_READABLE}`,
+    createRule:
+      `${AUTHED} && author = @request.auth.id && ${CAN_WRITE_PAGE} && ${COMMENT_PAGE_READABLE} && ` +
+      '(@request.data.authorName = @request.auth.name || @request.data.authorName = @request.auth.email)',
+    updateRule:
+      `author = @request.auth.id && @request.data.page:isset = false && @request.data.author:isset = false && ${CAN_WRITE_PAGE} && ` +
+      '(@request.data.authorName:isset = false || @request.data.authorName = @request.auth.name || @request.data.authorName = @request.auth.email)',
+  },
+  presence: {
+    createRule: `${AUTHED} && user = @request.auth.id && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id`,
+    updateRule:
+      'user = @request.auth.id && (@request.data.user:isset = false || @request.data.user = @request.auth.id) && ' +
+      '(@request.data.page:isset = false || @request.data.page.workspace.workspace_members_via_workspace.user ?= @request.auth.id)',
+  },
+  workspace_members: {
+    createRule: `${AUTHED} && @request.data.user = @request.auth.id && @request.data.workspace.owner ?= @request.auth.id`,
+    updateRule:
+      `${AUTHED} && @request.data.workspace:isset = false && @request.data.user:isset = false && ` +
+      '(@request.data.publicKey:isset = false || user = @request.auth.id) && ' +
+      `(${ADMIN_OF_ROW} || (user = @request.auth.id && @request.data.role:isset = false)) && ${NOT_THE_OWNER_ROW}`,
+    deleteRule: `${AUTHED} && (user = @request.auth.id || ${ADMIN_OF_ROW}) && ${NOT_THE_OWNER_ROW}`,
+  },
+  workspace_keys: {
+    updateRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW}) && @request.data.workspace:isset = false`,
+    deleteRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW})`,
+  },
+  yupdates: {
+    listRule: `${READER} && ${PAGE_READ('pg')}`,
+    viewRule: `${READER} && ${PAGE_READ('pg')}`,
+    createRule: `${WRITER_SCOPED} && ${PAGE_WRITE('pw')}`,
+    deleteRule: `${WRITER_SCOPED} && ${PAGE_WRITE('pw')}`,
+  },
+  page_versions: {
+    listRule: `${READER} && ${PAGE_READ('pg')}`,
+    viewRule: `${READER} && ${PAGE_READ('pg')}`,
+    createRule: `${WRITER_SCOPED} && ${PAGE_WRITE('pw')}`,
+    deleteRule: `${WRITER_SCOPED} && ${PAGE_WRITE('pw')}`,
+  },
+  reminders: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, updateRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
+  file_trash: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, updateRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
+  uploads: {
+    listRule: READER,
+    createRule: `${AUTHED} && (workspace = "" || ${CAN_WRITE})`,
+    deleteRule: WRITER_SCOPED,
+  },
+};
+
+const FAST_MEMBER = (alias, of) =>
+  `(@collection.workspace_members:${alias}.workspace ?= ${of} && @collection.workspace_members:${alias}.user ?= @request.auth.id)`;
+function faster(rule) {
+  if (typeof rule !== 'string') return rule;
+  return rule
+    .replace(/(^|[^.\w])page\.workspace\.workspace_members_via_workspace\.user \?= @request\.auth\.id/g, (m, pre) => pre + FAST_MEMBER('pmem', 'page.workspace'))
+    .replace(/(^|[^.\w])workspace\.workspace_members_via_workspace\.user \?= @request\.auth\.id/g, (m, pre) => pre + FAST_MEMBER('mem', 'workspace'))
+    .split('editors.id ?= @request.auth.id').join('editors:each ?= @request.auth.id')
+    .split('viewers.id ?= @request.auth.id').join('viewers:each ?= @request.auth.id');
+}
+const FASTER = ['pages', 'tables', 'table_rows', 'comments', 'presence', 'workspace_members', 'workspace_keys'];
+
 // --- build -------------------------------------------------------------------
 const base = JSON.parse(readFileSync(SCHEMA, 'utf8'));
 
@@ -161,6 +287,33 @@ for (const col of kept) {
 // real drift gate instead of a diff against itself.
 const have = new Set(kept.map((c) => c.name));
 const all = [...kept, ...NEW_COLLECTIONS.filter((c) => !have.has(c.name))];
+for (const col of all) {
+  const r = RULES[col.name] || {};
+  for (const k of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule']) {
+    if (typeof r[k] === 'string') col[k] = r[k];
+  }
+  for (const k of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule']) {
+    if (typeof col[k] === 'string') col[k] = col[k].split(OLD_MEMBER_OF_NEW_WS).join(MEMBER_OF_NEW_WS).split(OLD_NOT_PAGE_VIEWER).join(NOT_PAGE_VIEWER);
+  }
+  if (col.name === 'pages' && !String(col.updateRule).includes('@request.data.workspace:isset')) {
+    col.updateRule = `${col.updateRule} && (@request.data.workspace:isset = false || ${MEMBER_OF_NEW_WS})`;
+  }
+  if (col.name === 'pages') {
+    for (const k of ['updateRule', 'deleteRule']) {
+      if (typeof col[k] === 'string' && !col[k].includes(CAN_WRITE)) col[k] = `${col[k]} && ${CAN_WRITE} && ${NOT_PAGE_VIEWER}`;
+    }
+    if (!col.updateRule.includes(OWNER_ONLY_PAGE_FIELDS)) col.updateRule = `${col.updateRule} && ${OWNER_ONLY_PAGE_FIELDS}`;
+    const HARD_DELETE = `(owner = ${A_ID} || ${ADMIN_OF_ROW})`;
+    if (!col.deleteRule.includes(HARD_DELETE)) col.deleteRule = `${col.deleteRule} && ${HARD_DELETE}`;
+    for (const k of ['listRule', 'viewRule']) col[k] = col[k].split(PUBLIC_LINK_V1).join(PUBLIC_LINK).split(OLD_PUBLIC_LINK).join(PUBLIC_LINK);
+  }
+  if (FASTER.includes(col.name)) {
+    for (const k of ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule']) col[k] = faster(col[k]);
+  }
+  for (const i of ADD_INDEXES[col.name] || []) {
+    if (!col.indexes.includes(i)) col.indexes.push(i);
+  }
+}
 
 // Every field gets the full 0.22 shape so saveCollection never sees a partial.
 for (const col of all) {
@@ -275,12 +428,51 @@ migrate(
 );
 `;
 
+const RULE_KEYS = ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule'];
+const narrowed = {};
+for (const col of all) {
+  if (!RULES[col.name] && !FASTER.includes(col.name)) continue;
+  narrowed[col.name] = {};
+  for (const k of RULE_KEYS) narrowed[col.name][k] = col[k] === undefined ? null : col[k];
+}
+const rulesMigration = `/// <reference path="../pb_data/types.d.ts" />
+
+migrate(
+  function (db) {
+    var dao = new Dao(db);
+    var rules = ${JSON.stringify(narrowed, null, 4).split('\n').join('\n    ')};
+    Object.keys(rules).forEach(function (name) {
+      var col;
+      try {
+        col = dao.findCollectionByNameOrId(name);
+      } catch (e) {
+        return;
+      }
+      var r = rules[name];
+      col.listRule = r.listRule;
+      col.viewRule = r.viewRule;
+      col.createRule = r.createRule;
+      col.updateRule = r.updateRule;
+      col.deleteRule = r.deleteRule;
+      dao.saveCollection(col);
+    });
+  },
+  function (db) {},
+);
+`;
+
 if (CHECK) {
   const curSchema = readFileSync(SCHEMA, 'utf8');
   const curMig = readFileSync(OUT, 'utf8');
   const drift = [];
   if (curSchema !== canonical) drift.push('pocketbase/schema.json');
   if (curMig !== migration) drift.push('server/pb_migrations/1699999999_bootstrap.js');
+  let curRules = '';
+  try {
+    curRules = readFileSync(RULES_OUT, 'utf8');
+  } catch {
+  }
+  if (curRules !== rulesMigration) drift.push('server/pb_migrations/1700000015_narrow_write_rules.js');
   if (drift.length) {
     console.error('schema drift in: ' + drift.join(', '));
     console.error('run `npm run schema:gen` and commit the result');
@@ -290,5 +482,6 @@ if (CHECK) {
 } else {
   writeFileSync(SCHEMA, canonical);
   writeFileSync(OUT, migration);
+  writeFileSync(RULES_OUT, rulesMigration);
   console.log(`wrote pocketbase/schema.json and the bootstrap migration (${all.length} collections)`);
 }

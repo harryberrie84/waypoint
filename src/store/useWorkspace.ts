@@ -12,8 +12,10 @@ import {
 } from '../lib/api';
 import type { Workspace, WorkspaceMember, WorkspaceInvite, WorkspaceRole, NumberStyle } from '../types';
 import { roleInWorkspace, classifyWorkspaces, pendingInvitesFor } from '../lib/workspace';
+import { newInviteToken, pendingInviteToken, forgetInviteToken } from '../lib/inviteToken';
 import { beginWrite, endWrite, keepPendingFields } from '../lib/proseSync';
 import { useData } from './useData';
+import { toast } from './useToast';
 
 // ---------------------------------------------------------------------------
 // Workspace store (feature 4)
@@ -116,7 +118,7 @@ interface WorkspaceState {
   setWorkspaceIcon: (id: string, icon: string) => Promise<void>;
   deleteWorkspace: (workspaceId: string) => Promise<boolean>;
   claimMyInvites: () => Promise<string[]>;
-  invite: (email: string, role: WorkspaceRole) => Promise<boolean>;
+  invite: (email: string, role: WorkspaceRole) => Promise<string | null>;
   cancelInvite: (inviteId: string) => Promise<void>;
   removeMember: (memberId: string) => Promise<void>;
   setMemberRole: (memberId: string, role: WorkspaceRole) => Promise<void>;
@@ -142,6 +144,32 @@ async function buildRoster(members: WorkspaceMember[], activeId: string | null, 
   return [...seen.values()];
 }
 
+// Claiming without the server's claim route: only an older server lacks it, and
+// there the membership rules still let an invitee seat themselves.
+async function claimDirectly(userId: string, userName: string, email: string): Promise<string[]> {
+  let invites: WorkspaceInvite[] = [];
+  try {
+    invites = await workspaceInvitesApi.list();
+  } catch {
+    return [];
+  }
+  const targets: string[] = [];
+  for (const inv of pendingInvitesFor(email, invites)) {
+    try {
+      await workspaceMembersApi.create(inv.workspace, userId, userName, inv.role);
+    } catch (err) {
+      console.error('[workspace] claim failed for invite ' + inv.id, err);
+    }
+    if (!targets.includes(inv.workspace)) targets.push(inv.workspace);
+    try {
+      await workspaceInvitesApi.remove(inv.id);
+    } catch (err) {
+      console.error('[workspace] could not clear a claimed invite', err);
+    }
+  }
+  return targets;
+}
+
 function pickActive(workspaces: Workspace[], members: WorkspaceMember[], userId: string): string {
   let stored: string | null = null;
   try { stored = localStorage.getItem(ACTIVE_KEY); } catch { stored = null; }
@@ -149,6 +177,30 @@ function pickActive(workspaces: Workspace[], members: WorkspaceMember[], userId:
   if (stored && workspaces.some((w) => w.id === stored) && amMember(stored)) return stored;
   const { private: priv, shared } = classifyWorkspaces(workspaces, members, userId);
   return priv[0]?.id ?? shared[0]?.id ?? workspaces[0]?.id ?? DEFAULT_ID;
+}
+
+const WS_CACHE = (userId: string) => `waypoint:ws-cache:${userId}`;
+interface WorkspaceCache {
+  workspaces: Workspace[];
+  members: WorkspaceMember[];
+  activeWorkspaceId: string;
+  defaultWorkspaceId: string;
+}
+function writeWorkspaceCache(userId: string, c: WorkspaceCache) {
+  try {
+    localStorage.setItem(WS_CACHE(userId), JSON.stringify(c));
+  } catch {
+    return;
+  }
+}
+function readWorkspaceCache(userId: string): WorkspaceCache | null {
+  try {
+    const raw = localStorage.getItem(WS_CACHE(userId));
+    const c = raw ? (JSON.parse(raw) as WorkspaceCache) : null;
+    return c && Array.isArray(c.workspaces) && c.workspaces.length && c.activeWorkspaceId ? c : null;
+  } catch {
+    return null;
+  }
 }
 
 export const useWorkspace = create<WorkspaceState>((set, get) => ({
@@ -203,7 +255,30 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       const defaultWorkspaceId = priv[0]?.id ?? active;
       const roster = await buildRoster(seats, active, false);
       set({ workspaces, members: seats, invites, roster, activeWorkspaceId: active, defaultWorkspaceId, usingDefault: false, ready: true });
-    } catch {
+      writeWorkspaceCache(u.id, { workspaces: rows, members: seats, activeWorkspaceId: active, defaultWorkspaceId });
+    } catch (err) {
+      const unreachable = (typeof navigator !== 'undefined' && navigator.onLine === false) || (err as { status?: number })?.status === 0;
+      const cached = unreachable ? readWorkspaceCache(u.id) : null;
+      if (unreachable) {
+        window.addEventListener(
+          'online',
+          () => {
+            void get()
+              .hydrateWorkspaces()
+              .then(() => useData.getState().hydrate());
+          },
+          { once: true },
+        );
+      }
+      if (cached) {
+        const workspaces = cached.workspaces.map((r) => withLocalFlags(r));
+        const roster = await buildRoster(cached.members, cached.activeWorkspaceId, false).catch(() => []);
+        set({
+          workspaces, members: cached.members, invites: [], roster, activeWorkspaceId: cached.activeWorkspaceId,
+          defaultWorkspaceId: cached.defaultWorkspaceId, usingDefault: false, ready: true,
+        });
+        return;
+      }
       // Pre-migration (collections missing or empty): synthesize a default so
       // the app runs unchanged. Names still resolve via the global users list.
       const { ws, member } = syntheticDefault();
@@ -454,43 +529,33 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   claimMyInvites: async () => {
     const u = me();
     if (!u.id || !u.email) return [];
-    let invites: WorkspaceInvite[] = [];
+    const token = pendingInviteToken();
     try {
-      invites = await workspaceInvitesApi.list();
-    } catch {
-      return []; // collections missing or nothing visible, nothing to claim
+      const { workspaces, reason, routeMissing } = await workspaceInvitesApi.claim(token);
+      if (routeMissing) return await claimDirectly(u.id, u.name, u.email);
+      if (token) forgetInviteToken();
+      if (reason === 'other-email') toast('That invite was sent to a different email address. Sign in with that address to join.', 'error');
+      else if (reason === 'expired') toast('That invite has expired. Ask for a new one.', 'error');
+      else if (reason === 'unknown') toast('That invite has already been used or was withdrawn.', 'error');
+      return workspaces;
+    } catch (err) {
+      console.error('[workspace] claiming invites failed', err);
+      return [];
     }
-    const mine = pendingInvitesFor(u.email, invites);
-    const targets: string[] = [];
-    for (const inv of mine) {
-      try {
-        await workspaceMembersApi.create(inv.workspace, u.id, u.name, inv.role);
-      } catch (err) {
-        // A unique-index hit means we're already a member (harmless, e.g. the
-        // server hook beat us to it). A 403 means the workspace_members create
-        // rule wasn't relaxed for invitees; that's the one to surface.
-        console.error('[workspace] claim failed for invite ' + inv.id, err);
-      }
-      if (!targets.includes(inv.workspace)) targets.push(inv.workspace);
-      try {
-        await workspaceInvitesApi.remove(inv.id); // clear the pending invite
-      } catch {
-        /* leave it; a stale pending row is cosmetic */
-      }
-    }
-    return targets;
   },
 
   invite: async (email, role) => {
     const id = get().activeWorkspaceId;
-    if (!id || id === DEFAULT_ID) return false;
+    if (!id || id === DEFAULT_ID) return null;
     try {
-      const inv = await workspaceInvitesApi.create(id, email, role);
+      const token = newInviteToken();
+      const inv = await workspaceInvitesApi.create(id, email, role, token);
       set((s) => ({ invites: [inv, ...s.invites.filter((i) => i.id !== inv.id)] }));
-      return true;
+      const wsName = get().workspaces.find((w) => w.id === id)?.name ?? '';
+      return `${window.location.origin}/?invite=${encodeURIComponent(inv.email)}&ws=${encodeURIComponent(wsName)}&t=${encodeURIComponent(token)}`;
     } catch (err) {
       console.error('[workspace] invite failed', err);
-      return false;
+      return null;
     }
   },
 

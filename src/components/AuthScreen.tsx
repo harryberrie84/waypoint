@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { rememberInviteToken } from '../lib/inviteToken';
 import { useAuth } from '../store/useAuth';
 import { readInviteFromSearch } from '../lib/workspace';
 import { MapPin } from 'lucide-react';
@@ -20,7 +21,10 @@ export function AuthScreen() {
   // Arriving from an invite email (`/?invite=…`): prefill the address and start
   // on "create account" so the invitee signs up with the exact email the invite
   // was sent to, that's what the server hook claims into a membership.
-  const invite = useMemo(() => readInviteFromSearch(window.location.search), []);
+  const invite = useMemo(() => {
+    rememberInviteToken(window.location.search);
+    return readInviteFromSearch(window.location.search);
+  }, []);
   // A reset link (`/?reset=<token>`) drops straight into "set a new password".
   const resetToken = useMemo(() => new URLSearchParams(window.location.search).get('reset'), []);
 

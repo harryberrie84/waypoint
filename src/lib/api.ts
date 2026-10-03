@@ -1,6 +1,8 @@
 import { pb } from './pocketbase';
 import { normalizeEmail } from './workspace';
 import { isEnvelope } from './crypto';
+import { KEYSET_PAGE, loadAllByKeyset, sortByKey } from './keyset';
+import { PAGE_LIST_FIELDS } from './pageFields';
 import type {
   Page,
   TableData,
@@ -37,6 +39,7 @@ function toPage(r: RecordModel): Page {
     owner: r.owner ?? '',
     workspace: typeof r.workspace === 'string' && r.workspace ? r.workspace : undefined,
     trashed: r.trashed === true,
+    trashedWith: typeof r.trashedWith === 'string' && r.trashedWith ? r.trashedWith : undefined,
     visibility: r.visibility === 'private' ? 'private' : 'workspace',
     publicToken: typeof r.publicToken === 'string' && r.publicToken ? r.publicToken : undefined,
     editors: Array.isArray(r.editors) ? (r.editors as string[]) : [],
@@ -145,9 +148,83 @@ function toPresence(r: RecordModel): PresenceRecord {
 
 // --- Pages ------------------------------------------------------------------
 
+async function listAllByKeyset(collection: string, sortKey: string, fields?: string): Promise<RecordModel[]> {
+  const records = await loadAllByKeyset((after) =>
+    pb
+      .collection(collection)
+      .getList(1, KEYSET_PAGE, {
+        sort: 'id',
+        skipTotal: true,
+        ...(fields ? { fields } : {}),
+        ...(after ? { filter: pb.filter('id > {:after}', { after }) } : {}),
+      })
+      .then((r) => r.items),
+  );
+  return sortByKey(records, sortKey);
+}
+
+let saveRouteMissing = false;
+const saveChains = new Map<string, Promise<unknown>>();
+let waitingForNetwork = 0;
+
+export function savesWaitingForNetwork(): number {
+  return waitingForNetwork;
+}
+
+function whenOnline(): Promise<void> {
+  if (typeof navigator === 'undefined' || navigator.onLine !== false) return Promise.resolve();
+  waitingForNetwork++;
+  return new Promise((resolve) =>
+    window.addEventListener(
+      'online',
+      () => {
+        waitingForNetwork--;
+        resolve();
+      },
+      { once: true },
+    ),
+  );
+}
+
+export async function saveFields(collection: string, id: string, patch: Record<string, unknown>): Promise<RecordModel> {
+  const key = `${collection}/${id}`;
+  const run = async (): Promise<RecordModel> => {
+    await whenOnline();
+    if (!saveRouteMissing) {
+      try {
+        return (await pb.send(`/api/waypoint/save/${collection}/${id}`, { method: 'PATCH', body: patch })) as RecordModel;
+      } catch (err) {
+        const e = err as { status?: number; response?: { message?: string } };
+        if (e.status === 404 && /^Not Found\.?$/.test(e.response?.message ?? '')) saveRouteMissing = true;
+        else throw err;
+      }
+    }
+    return pb.collection(collection).update(id, patch);
+  };
+  const guarded = async () => {
+    try {
+      return await run();
+    } catch (err) {
+      const status = (err as { status?: number }).status ?? 0;
+      if (status >= 400 && status < 500 && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('waypoint:save-refused', { detail: { collection, status } }));
+      }
+      throw err;
+    }
+  };
+  const prev = saveChains.get(key) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(guarded);
+  saveChains.set(key, next);
+  try {
+    return await next;
+  } finally {
+    if (saveChains.get(key) === next) saveChains.delete(key);
+  }
+}
+
 export const pagesApi = {
   async list(): Promise<Page[]> {
-    const records = await pb.collection('pages').getFullList({ sort: 'order' });
+    const records = await listAllByKeyset('pages', 'order', PAGE_LIST_FIELDS);
     return records.map(toPage);
   },
   async create(data: Partial<Page>): Promise<Page> {
@@ -170,7 +247,7 @@ export const pagesApi = {
     return toPage(rec);
   },
   async update(id: string, patch: Partial<Page>): Promise<Page> {
-    const rec = await pb.collection('pages').update(id, patch);
+    const rec = await saveFields('pages', id, patch as Record<string, unknown>);
     return toPage(rec);
   },
   async remove(id: string): Promise<void> {
@@ -269,6 +346,14 @@ export const versionsApi = {
       return { id: rec.id, page: rec.page, content, created: rec.created };
     });
   },
+  async listStampsForPage(page: string): Promise<{ id: string; created: string }[]> {
+    const recs = await pb.collection('page_versions').getFullList({
+      filter: pb.filter('page = {:page}', { page }),
+      sort: '-created,-id',
+      fields: 'id,created',
+    });
+    return recs.map((r) => ({ id: r.id, created: String((r as { created?: unknown }).created ?? '') }));
+  },
   async remove(id: string): Promise<void> {
     await pb.collection('page_versions').delete(id);
   },
@@ -278,7 +363,7 @@ export const versionsApi = {
 
 export const tablesApi = {
   async list(): Promise<TableData[]> {
-    const records = await pb.collection('tables').getFullList({ sort: 'created' });
+    const records = await listAllByKeyset('tables', 'created');
     return records.map(toTable);
   },
   async create(data: Partial<TableData>): Promise<TableData> {
@@ -293,8 +378,11 @@ export const tablesApi = {
     });
     return toTable(rec);
   },
+  async get(id: string): Promise<TableData> {
+    return toTable(await pb.collection('tables').getOne(id));
+  },
   async update(id: string, patch: Partial<TableData>): Promise<TableData> {
-    const rec = await pb.collection('tables').update(id, patch);
+    const rec = await saveFields('tables', id, patch as Record<string, unknown>);
     return toTable(rec);
   },
   async remove(id: string): Promise<void> {
@@ -314,21 +402,27 @@ type RowWrite = Partial<Omit<TableRow, 'cells' | 'content'>> & {
 
 export const rowsApi = {
   async list(): Promise<TableRow[]> {
-    const records = await pb.collection('table_rows').getFullList({ sort: 'position' });
+    const records = await listAllByKeyset('table_rows', 'position');
     return records.map(toRow);
   },
   async create(data: RowWrite): Promise<TableRow> {
     const rec = await pb.collection('table_rows').create({
+      ...(data.id ? { id: data.id } : {}),
       table: data.table ?? '',
       ...(data.workspace ? { workspace: data.workspace } : {}),
       parent: data.parent ?? '',
       cells: data.cells ?? {},
       position: data.position ?? 0,
+      ...(data.content !== undefined && data.content !== null ? { content: data.content } : {}),
+      ...(data.reactions ? { reactions: data.reactions } : {}),
     });
     return toRow(rec);
   },
+  async get(id: string): Promise<TableRow> {
+    return toRow(await pb.collection('table_rows').getOne(id));
+  },
   async update(id: string, patch: RowWrite): Promise<TableRow> {
-    const rec = await pb.collection('table_rows').update(id, patch);
+    const rec = await saveFields('table_rows', id, patch as Record<string, unknown>);
     return toRow(rec);
   },
   async remove(id: string): Promise<void> {
@@ -612,7 +706,7 @@ export const workspacesApi = {
     return toWorkspace(rec);
   },
   async update(id: string, patch: Partial<Workspace>): Promise<Workspace> {
-    const rec = await pb.collection('workspaces').update(id, patch);
+    const rec = await saveFields('workspaces', id, patch as Record<string, unknown>);
     return toWorkspace(rec);
   },
   async remove(id: string): Promise<void> {
@@ -686,8 +780,9 @@ export const workspaceInvitesApi = {
     const records = await pb.collection('workspace_invites').getFullList({ sort: '-created' });
     return records.map(toWorkspaceInvite);
   },
-  async create(workspace: string, email: string, role: WorkspaceRole): Promise<WorkspaceInvite> {
+  async create(workspace: string, email: string, role: WorkspaceRole, token: string): Promise<WorkspaceInvite> {
     const rec = await pb.collection('workspace_invites').create({
+      token,
       workspace,
       // Lowercase so the claim-on-signin hook matches the registered email exactly.
       email: normalizeEmail(email),
@@ -699,6 +794,19 @@ export const workspaceInvitesApi = {
   },
   async remove(id: string): Promise<void> {
     await pb.collection('workspace_invites').delete(id);
+  },
+  // `routeMissing` means the server predates the claim route (its hooks were not
+  // updated with this bundle), so the caller falls back to claiming directly.
+  async claim(token: string): Promise<{ workspaces: string[]; reason: string; routeMissing?: boolean }> {
+    let r: { workspaces?: string[]; reason?: string };
+    try {
+      r = (await pb.send('/api/waypoint/invites/claim', { method: 'POST', body: token ? { token } : {} })) as typeof r;
+    } catch (err) {
+      const e = err as { status?: number; response?: { message?: string } };
+      if (e.status === 404 && /^Not Found\.?$/.test(e.response?.message ?? '')) return { workspaces: [], reason: '', routeMissing: true };
+      throw err;
+    }
+    return { workspaces: Array.isArray(r?.workspaces) ? r.workspaces : [], reason: typeof r?.reason === 'string' ? r.reason : '' };
   },
 };
 

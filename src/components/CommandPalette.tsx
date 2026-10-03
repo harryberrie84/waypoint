@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, FileText, CornerDownLeft, Plus, Table, Home, Settings, Palette, Moon, Lock, FilePlus, Zap, Paperclip } from 'lucide-react';
-import { useData, selectTopLevel } from '../store/useData';
+import { useData } from '../store/useData';
 import { useWorkspace } from '../store/useWorkspace';
 import { useVault } from '../store/useVault';
 import { useWorkspaceKeys } from '../store/useWorkspaceKeys';
@@ -84,14 +84,18 @@ export function CommandPalette({ open, onClose, onOpenSettings, onOpenThemes, on
   const searchBodies = useWorkspaceKeys((s) => s.searchBodies);
   // Rows scoped to the active workspace (those whose table is in this workspace).
   const scopedRows = useMemo(() => {
-    const ids = new Set(wsTables.map((t) => t.id));
     const out: Record<string, TableRow> = {};
+    if (!open) return out;
+    const ids = new Set(wsTables.map((t) => t.id));
     for (const r of Object.values(rows)) if (ids.has(r.table)) out[r.id] = r;
     return out;
-  }, [rows, wsTables]);
+  }, [open, rows, wsTables]);
   // Rebuilt only when the store data changes, not on every keystroke.
-  const index = useMemo(() => buildSearchIndex(pages, tables, scopedRows, searchBodies), [pages, tables, scopedRows, searchBodies]);
-  const results = useMemo(() => searchIndex(index, query, 8), [index, query]);
+  const index = useMemo(
+    () => (open ? buildSearchIndex(pages, tables, scopedRows, searchBodies) : null),
+    [open, pages, tables, scopedRows, searchBodies],
+  );
+  const results = useMemo(() => (index ? searchIndex(index, query, 8) : []), [index, query]);
 
   // Things the palette can DO, not just find. Built from the store plus the app
   // handlers; the ones whose handler isn't wired are dropped.
@@ -101,7 +105,7 @@ export function CommandPalette({ open, onClose, onOpenSettings, onOpenThemes, on
       label: 'New page',
       icon: FilePlus,
       keywords: ['new page', 'create page', 'add page'],
-      run: () => void createPage(selectTopLevel(pages)[0]?.id ?? '').then((id) => id && setActivePage(id)),
+      run: () => void createPage('').then((id) => id && setActivePage(id)),
     },
     { label: 'New workspace', icon: Plus, keywords: ['new workspace', 'space', 'team'], run: () => void createWorkspace('Untitled workspace') },
     onOpenSettings && { label: 'Open settings', icon: Settings, keywords: ['settings', 'members', 'invite', 'backup', 'export', 'import', 'notion'], run: onOpenSettings },
@@ -136,12 +140,10 @@ export function CommandPalette({ open, onClose, onOpenSettings, onOpenThemes, on
 
   if (!open) return null;
 
-  const roots = selectTopLevel(pages);
 
   const runCreate = async () => {
-    const parent = roots[0]?.id ?? '';
     const title = query.trim();
-    const id = await createPage(parent);
+    const id = await createPage('');
     if (id) {
       if (title) renamePage(id, title);
       setActivePage(id);

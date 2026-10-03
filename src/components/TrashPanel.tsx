@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Trash2, RotateCcw, X, Check } from 'lucide-react';
 import { useData, selectTrashRoots } from '../store/useData';
 import { displayTitle } from '../lib/crypto';
@@ -22,12 +22,24 @@ export function TrashPanel({ open, onClose }: Props) {
   const [confirmAll, setConfirmAll] = useState(false);
   const [autoPurge, setAutoPurge] = useState(() => localStorage.getItem('waypoint:trashAutoPurge') !== '0');
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
   const trashed = selectTrashRoots(pages);
 
   return (
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center bg-black/30 pt-[14vh] backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Trash"
       onMouseDown={onClose}
     >
       <div

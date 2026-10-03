@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { pb } from '../lib/pocketbase';
 import { useVault } from './useVault';
 import { LANDING_EVENT } from '../lib/landing';
+import { clearDataset } from '../lib/offlineCache';
 import type { AuthUser } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,30 @@ function messageFromError(err: unknown, fallback: string): string {
   return fallback;
 }
 
+let ending = false;
+async function endSession(): Promise<void> {
+  if (ending) return;
+  ending = true;
+  try {
+    const data = await import('./useData');
+    await Promise.race([data.flushAllWrites(), new Promise((r) => setTimeout(r, 3000))]);
+  } catch {
+    /* nothing pending to save */
+  }
+  (pb.realtime as unknown as { disconnect: () => void }).disconnect();
+  await useVault.getState().lock().catch(() => {});
+  await clearDataset();
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('waypoint:ws-cache:')) localStorage.removeItem(k);
+  } catch {
+    /* storage unavailable, nothing cached */
+  }
+  pb.authStore.clear();
+  window.location.reload();
+}
+
+let sessionUserId: string | null = null;
+
 export const useAuth = create<AuthState>((set) => ({
   user: currentUser(),
   ready: false,
@@ -64,9 +89,16 @@ export const useAuth = create<AuthState>((set) => ({
   init: () => {
     // Reflect any external token changes into the store.
     pb.authStore.onChange(() => {
-      set({ user: currentUser() });
+      const next = currentUser();
+      if (sessionUserId && next?.id !== sessionUserId) {
+        void endSession();
+        return;
+      }
+      if (next) sessionUserId = next.id;
+      set({ user: next });
     });
     const user = currentUser();
+    sessionUserId = user?.id ?? null;
     set({ user, ready: true });
     // Session restored without a password, try the on-device key cache.
     if (user) {
@@ -95,10 +127,7 @@ export const useAuth = create<AuthState>((set) => ({
           // looks signed in and silently fails every write, with no way to tell
           // from the inside that anything is wrong.
           const status = (err as { status?: number } | null)?.status;
-          if (status === 401 || status === 403) {
-            pb.authStore.clear();
-            set({ user: null });
-          }
+          if (status === 401 || status === 403) void endSession();
         });
     }
   },
@@ -106,7 +135,13 @@ export const useAuth = create<AuthState>((set) => ({
   login: async (email, password) => {
     set({ busy: true, error: null });
     try {
-      await pb.collection('users').authWithPassword(email.trim(), password);
+      const typed = email.trim();
+      try {
+        await pb.collection('users').authWithPassword(typed, password);
+      } catch (first) {
+        if (typed === typed.toLowerCase()) throw first;
+        await pb.collection('users').authWithPassword(typed.toLowerCase(), password);
+      }
       const user = currentUser();
       set({ user, busy: false });
       // We have the password here, so unlock the vault transparently.
@@ -133,7 +168,9 @@ export const useAuth = create<AuthState>((set) => ({
       });
       // Immediately authenticate the freshly-created account.
       await pb.collection('users').authWithPassword(cleanEmail, password);
-      set({ user: currentUser(), busy: false });
+      const user = currentUser();
+      set({ user, busy: false });
+      if (user) void useVault.getState().load(user.id);
       return true;
     } catch (err) {
       set({ busy: false, error: messageFromError(err, 'Could not create the account.') });
@@ -167,9 +204,7 @@ export const useAuth = create<AuthState>((set) => ({
 
   logout: () => {
     // Wipe the in-memory key + on-device cache before dropping the session.
-    useVault.getState().lock();
-    pb.authStore.clear();
-    set({ user: null });
+    void endSession();
   },
 
   clearError: () => set({ error: null }),

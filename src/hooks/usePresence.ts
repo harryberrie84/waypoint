@@ -188,7 +188,8 @@ export function usePresence(
         else scheduleRefresh(); // mode/staleness soon
       })
       .then((fn) => {
-        unsub = fn;
+        if (cancelled) void fn();
+        else unsub = fn;
       })
       .catch(() => {});
 
@@ -360,7 +361,8 @@ export function useWorkspacePresence(): Map<string, PresenceRecord[]> {
         rebuild();
       })
       .then((fn) => {
-        unsub = fn;
+        if (cancelled) void fn();
+        else unsub = fn;
       })
       .catch(() => {});
 

@@ -1,5 +1,6 @@
 import { Extension } from '@tiptap/core';
-import { Plugin, PluginKey, NodeSelection, type EditorState } from '@tiptap/pm/state';
+import { Plugin, PluginKey, NodeSelection, TextSelection, type EditorState } from '@tiptap/pm/state';
+import type { EditorView } from '@tiptap/pm/view';
 import { isWidgetType } from '../lib/doc';
 import { toast } from '../store/useToast';
 import { confirmDeleteRange, type WidgetRef } from './confirmDelete';
@@ -57,21 +58,69 @@ function analyzeDeletion(state: EditorState): Deletion | null {
   return { widgets, from: selection.from, to: selection.to };
 }
 
+function typeBelow(view: EditorView, text: string): boolean {
+  const { state } = view;
+  const after = state.selection.to;
+  const next = state.doc.resolve(after).nodeAfter;
+  let tr = state.tr;
+  let caret: number;
+  if (next && next.isTextblock && next.content.size === 0) {
+    caret = after + 1;
+  } else {
+    const paragraph = state.schema.nodes.paragraph;
+    if (!paragraph) return false;
+    tr = tr.insert(after, paragraph.create());
+    caret = after + 1;
+  }
+  tr = tr.setSelection(TextSelection.create(tr.doc, caret)).insertText(text);
+  view.dispatch(tr.scrollIntoView());
+  return true;
+}
+
+// A key pressed right after Home, End or a click can arrive before the editor has
+// read the new caret position, and the browser then deletes from where the caret
+// really is. Asking the page where the caret is avoids guarding the wrong spot.
+function caretOnScreen(view: EditorView): number | null {
+  const sel = view.dom.ownerDocument.getSelection();
+  if (!sel || !sel.isCollapsed || !sel.focusNode || !view.dom.contains(sel.focusNode)) return null;
+  try {
+    return view.posAtDOM(sel.focusNode, sel.focusOffset);
+  } catch {
+    return null;
+  }
+}
+
 export const DeleteGuard = Extension.create({
   name: 'deleteGuard',
+  priority: 1000,
 
   addKeyboardShortcuts() {
     // Return true to SWALLOW the key (we handle the delete via the modal),
     // false to let the default run (no widget in the way). Empty selection and
     // plain-text ranges return false immediately, so normal typing and normal
     // text deletion are never intercepted.
-    const guard = () => {
-      const d = analyzeDeletion(this.editor.state);
-      if (!d) return false;
-      confirmDeleteRange(this.editor, d.from, d.to, d.widgets);
+    const guard = (direction: 'back' | 'forward') => () => {
+      const state = this.editor.state;
+      const d = analyzeDeletion(state);
+      if (d) {
+        confirmDeleteRange(this.editor, d.from, d.to, d.widgets);
+        return true;
+      }
+      const { selection } = state;
+      if (!selection.empty) return false;
+      const $pos = state.doc.resolve(caretOnScreen(this.editor.view) ?? selection.from);
+      if (!$pos.parent.isTextblock) return false;
+      const atEdge = direction === 'back' ? $pos.parentOffset === 0 : $pos.parentOffset === $pos.parent.content.size;
+      if (!atEdge) return false;
+      const edge = direction === 'back' ? $pos.before() : $pos.after();
+      const $edge = state.doc.resolve(edge);
+      const neighbour = direction === 'back' ? $edge.nodeBefore : $edge.nodeAfter;
+      if (!neighbour || !neighbour.isBlock || !isWidgetType(neighbour.type.name)) return false;
+      const at = direction === 'back' ? edge - neighbour.nodeSize : edge;
+      this.editor.view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, at)).scrollIntoView());
       return true;
     };
-    return { Backspace: guard, Delete: guard };
+    return { Backspace: guard('back'), Delete: guard('forward') };
   },
 
   addProseMirrorPlugins() {
@@ -109,12 +158,13 @@ export const DeleteGuard = Extension.create({
           // you type in a cell. So check the editor actually owns the keyboard:
           // hasFocus() is `activeElement === view.dom`, which is false whenever
           // focus sits in a cell input (or any widget's own field), and this bails.
-          handleTextInput: (view) => {
+          handleTextInput: (view, _from, _to, text) => {
             if (!view.hasFocus()) return false;
             const d = analyzeDeletion(view.state);
             if (!d) return false;
+            if (view.state.selection instanceof NodeSelection) return typeBelow(view, text);
             warnBlocked();
-            return true; // swallow it, and leave the widget exactly as it was
+            return true;
           },
           // Same hole, same answer, for a paste landing on a selected widget. Also
           // focus-gated, so pasting into a cell is untouched.

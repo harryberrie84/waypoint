@@ -135,7 +135,7 @@ function WidgetImport<T>({ kind, parse, onRecords }: { kind: string; parse: (tex
       />
       {err && <p className="mt-1 text-xs text-rose-500">{err}</p>}
       <div className="mt-1.5 flex items-center gap-1.5">
-        <button type="button" onClick={run} disabled={!text.trim()} className="rounded-md bg-clay px-2.5 py-1 text-xs font-medium text-white hover:bg-clay/90 disabled:opacity-40">
+        <button type="button" onClick={run} disabled={!text.trim()} className="rounded-lg bg-clay px-2.5 py-1 text-xs font-medium text-white hover:bg-clay/90 disabled:opacity-40">
           Import
         </button>
         <button

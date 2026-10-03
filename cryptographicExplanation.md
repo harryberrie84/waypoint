@@ -164,9 +164,17 @@ Not end-to-end encrypted yet:
 - Server-side features cannot read encrypted data: the cron cannot read an
   encrypted reminder that isn't on a `reminder`/`person` field, and full-text
   search only indexes what your unlocked device has decrypted.
-- The decrypted master key is cached in `localStorage` so refreshes stay unlocked.
-  Anyone with physical access to an unlocked device can read it. Locking or signing
-  out clears it.
+- The master key is cached in the browser's IndexedDB, as a key the page can use
+  but not export, so refreshes stay unlocked. Anyone with physical access to an
+  unlocked device, or code running in the page, can use it. Locking or signing out
+  deletes it.
+- Pages in an encrypted workspace are kept on the device for fast and offline
+  opening, sealed with the workspace key (the same `enc:v1` envelopes the server
+  stores), never as readable text. Older plain copies are folded into the sealed
+  copy and deleted once sealing succeeds. The workspace key only exists in memory,
+  derived from the master key. While the vault stays unlocked on a device, whoever
+  has that device can open the sealed copies too; after locking or signing out
+  they cannot, because the master key is gone from it.
 
 ## The short version (send this to a dev friend)
 

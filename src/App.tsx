@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { OfflineBanner } from './components/OfflineBanner';
 import { useAuth } from './store/useAuth';
+import { pb } from './lib/pocketbase';
 import { useData } from './store/useData';
 import { useWorkspace } from './store/useWorkspace';
 import { useVault } from './store/useVault';
@@ -228,17 +230,34 @@ function Workspace() {
         running = false;
       }
     };
+    const RESYNC_AFTER_HIDDEN_MS = 30_000;
+    let hiddenAt = document.visibilityState === 'hidden' ? Date.now() : 0;
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void resync();
+      if (document.visibilityState !== 'visible') {
+        hiddenAt = Date.now();
+        return;
+      }
+      const away = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = 0;
+      if (away >= RESYNC_AFTER_HIDDEN_MS) void resync();
     };
     const onResume = () => void resync();
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('online', onResume);
-    window.addEventListener('focus', onResume);
+    let dropConnect: (() => Promise<void>) | null = null;
+    let gone = false;
+    void pb.realtime
+      .subscribe('PB_CONNECT', () => void useData.getState().catchUp())
+      .then((fn) => {
+        if (gone) void fn();
+        else dropConnect = fn;
+      })
+      .catch(() => {});
     return () => {
+      gone = true;
+      if (dropConnect) void dropConnect();
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('online', onResume);
-      window.removeEventListener('focus', onResume);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -257,9 +276,33 @@ function Workspace() {
     link.href = isImageIcon(activeWsIcon) ? activeWsIcon.trim() : emojiFavicon(activeWsIcon) || link.dataset.orig;
   }, [activeWsIcon]);
 
+  const vaultStatus = useVault((s) => s.status);
+  const vaultStatusForSeal = vaultStatus;
+  const sealPageCount = useData((s) => Object.keys(s.pages).length);
+  useEffect(() => {
+    const onRefused = () => toast('A change could not be saved: the server refused it. Reload to see what was kept.', 'error');
+    window.addEventListener('waypoint:save-refused', onRefused);
+    return () => window.removeEventListener('waypoint:save-refused', onRefused);
+  }, []);
+  const sealRun = useRef(false);
+  useEffect(() => {
+    if (vaultStatusForSeal !== 'unlocked' || sealRun.current) return;
+    const t = setTimeout(() => {
+      const ws = useWorkspace.getState();
+      const pages = Object.values(useData.getState().pages)
+        .filter((p) => p.workspace && ws.encryptedEnabled(p.workspace))
+        .map((p) => ({ id: p.id, workspace: p.workspace as string }));
+      if (!pages.length) return;
+      sealRun.current = true;
+      void import('./lib/collab').then((m) => m.sealPlainPageDocs(pages)).finally(() => {
+        sealRun.current = false;
+      });
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [vaultStatusForSeal, sealPageCount]);
+
   // Keep encrypted page titles decrypted in the store: re-run when the vault
   // unlocks and (debounced) whenever data changes. No-ops when nothing's encrypted.
-  const vaultStatus = useVault((s) => s.status);
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | null = null;
     const decrypt = () => {
@@ -553,6 +596,7 @@ function Workspace() {
         </div>
       )}
       <Toaster />
+      <OfflineBanner />
       <ConfirmDialog />
       <UpdateToast />
       <MobilePageSwitcher />

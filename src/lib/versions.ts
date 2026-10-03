@@ -24,6 +24,21 @@ export function maybeSnapshot(pageId: string, workspace: string, content: unknow
     });
 }
 
+// Unthrottled, and awaited: the copy taken right before a restore is what makes the
+// restore itself undoable, so the caller must know whether it landed.
+export async function snapshotNow(pageId: string, workspace: string, content: unknown): Promise<boolean> {
+  if (!pageId || content == null) return false;
+  try {
+    await versionsApi.create(pageId, workspace, content);
+  } catch (err) {
+    console.error('[versions] could not save the current text before a restore', err);
+    return false;
+  }
+  lastSnap.set(pageId, Date.now());
+  void prune(pageId);
+  return true;
+}
+
 // Never prune a page down to nothing. The age rule used to apply on its own, so a
 // page nobody had touched for a week kept ZERO snapshots, and the safety net
 // disappeared for precisely the pages most likely to be clobbered without anyone
@@ -32,7 +47,7 @@ const ALWAYS_KEEP = 3;
 
 async function prune(pageId: string): Promise<void> {
   try {
-    const list = await versionsApi.listForPage(pageId); // newest first
+    const list = await versionsApi.listStampsForPage(pageId); // newest first
     const cutoff = Date.now() - MAX_AGE_DAYS * 86400000;
     const stale = list.filter(
       (v, i) => i >= KEEP || (i >= ALWAYS_KEEP && new Date(v.created).getTime() < cutoff),

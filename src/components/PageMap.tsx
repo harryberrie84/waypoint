@@ -336,8 +336,9 @@ export function PageMap({ pageId, presence, onFocusPin, body }: { pageId: string
       onMapContextRef.current(e.latlng.lat, e.latlng.lng, e.originalEvent.clientX, e.originalEvent.clientY);
     });
     mapRef.current = map;
-    setTimeout(() => map.invalidateSize(), 50);
+    const sizeTimer = setTimeout(() => map.invalidateSize(), 50);
     return () => {
+      clearTimeout(sizeTimer);
       map.remove();
       mapRef.current = null;
       layerRef.current = null;

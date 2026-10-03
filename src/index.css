@@ -269,17 +269,7 @@ input[type='number'] {
 .tiptap > * + * {
   margin-top: 0.75em;
 }
-/* The page column is now wide enough for tables/embeds to breathe. Keep running
-   text at a comfortable measure; block embeds (tables, images, maps, embeds)
-   are left uncapped so they use the full width. */
-.tiptap > p,
-.tiptap > h1,
-.tiptap > h2,
-.tiptap > h3,
-.tiptap > ul,
-.tiptap > ol,
-.tiptap > blockquote,
-.tiptap > pre {
+.tiptap > * {
   max-width: 48rem;
 }
 .tiptap h1 {
@@ -482,8 +472,13 @@ input[type='number'] {
     align-items: stretch;
     gap: 0.75rem;
   }
-  .tiptap .col-row .tiptap-column {
+  .tiptap .col-row > .col-cell {
     flex: var(--col-grow, 1) 1 0;
+    min-width: 0;
+    display: flex;
+  }
+  .tiptap .col-row > .col-cell > .tiptap-column {
+    flex: 1 1 auto;
   }
 }
 

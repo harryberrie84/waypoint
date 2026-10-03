@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { holdPosition } from '../editor/heldPosition';
 import { Pencil, ListChecks, Table } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -74,7 +75,7 @@ import { parseForm, slugifyField } from '../lib/formBlock';
 import { useData } from '../store/useData';
 import { toast } from '../store/useToast';
 import { markdownToTiptap } from '../lib/notionImport';
-import { hasInlineMarkdown, parseInlineMarkdown } from '../lib/inlineMarkdown';
+import { hasInlineMarkdown, parseInlineMarkdown, looksLikeCode } from '../lib/inlineMarkdown';
 import { splitMarkdownTables } from '../lib/markdownTable';
 import { parseLatLong, trackingChip } from '../lib/smartPaste';
 import { attrText } from '../lib/search';
@@ -90,6 +91,9 @@ type JSONBlock = { type: string; attrs?: Record<string, unknown>; content?: unkn
 // ourselves: markdown (headings/lists/fences) through the markdown parser, a
 // solid block of lines into a code block, and prose (paragraph breaks) into
 // paragraphs that keep their line breaks. Returns true when it handled the paste.
+const MARKDOWN_BLOCK = /(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|\|)/;
+const looksMarkdownText = (text: string) => MARKDOWN_BLOCK.test(text) || hasInlineMarkdown(text);
+
 function pasteRichText(editor: TiptapEditor, raw: string): boolean {
   const norm = raw.replace(/\r\n?/g, '\n');
   if (!norm.includes('\n')) {
@@ -104,15 +108,15 @@ function pasteRichText(editor: TiptapEditor, raw: string): boolean {
     return true;
   }
 
-  const looksMarkdown = /(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|\|)/.test(norm);
+  const looksMarkdown = MARKDOWN_BLOCK.test(norm);
   let content: JSONBlock[];
   if (looksMarkdown) {
     content = (markdownToTiptap(norm) as { content?: JSONBlock[] }).content ?? [];
-  } else if (!/\n\s*\n/.test(norm)) {
-    // No blank lines: treat as a code/command block, preserving every line.
+  } else if (!/\n\s*\n/.test(norm) && looksLikeCode(norm)) {
     content = [{ type: 'codeBlock', content: [{ type: 'text', text: norm.replace(/\n+$/, '') }] }];
   } else {
-    content = norm.split(/\n{2,}/).map((p) => {
+    const chunks = /\n\s*\n/.test(norm) ? norm.split(/\n{2,}/) : norm.replace(/\n+$/, '').split('\n');
+    content = chunks.map((p) => {
       const nodes: JSONBlock[] = [];
       p.split('\n').forEach((ln, i) => {
         if (i) nodes.push({ type: 'hardBreak' });
@@ -126,65 +130,46 @@ function pasteRichText(editor: TiptapEditor, raw: string): boolean {
   return true;
 }
 
-// Insert an image node (data URL) into a ProseMirror view at a given position
-// (or the current selection). Async-safe: bails if the view was torn down
-// (e.g. the user navigated away before the image finished processing).
-function insertImageIntoView(view: EditorView, src: string, pos?: number) {
-  if (!view || (view as unknown as { isDestroyed?: boolean }).isDestroyed) return;
-  const type = view.state.schema.nodes.image;
-  if (!type) return;
-  const node = type.create({ src });
-  const tr =
-    typeof pos === 'number'
-      ? view.state.tr.insert(pos, node)
-      : view.state.tr.replaceSelectionWith(node);
-  view.dispatch(tr);
-}
-
-function handleImageFiles(view: EditorView, files: File[], pos?: number) {
+function handleImageFiles(editor: TiptapEditor | null, files: File[], pos?: number) {
   const images = files.filter((f) => f.type.startsWith('image/'));
-  if (!images.length) return false;
+  if (!images.length || !editor) return false;
+  const spot = holdPosition(editor, pos ?? editor.state.selection.from);
   void (async () => {
-    for (const file of images) {
-      try {
-        // Prefer a real upload so the image keeps full resolution and the doc
-        // stays small. Falls back to a downscaled inline data URL when the
-        // uploads collection isn't set up.
-        const url = await uploadsApi.upload(file);
-        const src = url ?? (await processImageFile(file));
-        insertImageIntoView(view, src, pos);
-      } catch (err) {
-        if (err instanceof ImageTooLargeError) toast(err.message, 'error');
-        else console.error('[editor] image insert failed', err);
+    try {
+      for (const file of images) {
+        try {
+          const url = await uploadsApi.upload(file);
+          const src = url ?? (await processImageFile(file));
+          spot.insert({ type: 'image', attrs: { src } }, { keep: true });
+        } catch (err) {
+          if (err instanceof ImageTooLargeError) toast(err.message, 'error');
+          else console.error('[editor] image insert failed', err);
+        }
       }
+    } finally {
+      spot.release();
     }
   })();
   return true;
 }
 
-// Drop any non-image file as a fileBlock attachment (boarding passes, PDFs…).
-function insertFileBlockIntoView(view: EditorView, attrs: object, pos?: number) {
-  if (!view || (view as unknown as { isDestroyed?: boolean }).isDestroyed) return;
-  const type = view.state.schema.nodes.fileBlock;
-  if (!type) return;
-  const node = type.create(attrs);
-  const tr =
-    typeof pos === 'number' ? view.state.tr.insert(pos, node) : view.state.tr.replaceSelectionWith(node);
-  view.dispatch(tr);
-}
-
-function handleAttachmentFiles(view: EditorView, files: File[], pos?: number) {
+function handleAttachmentFiles(editor: TiptapEditor | null, files: File[], pos?: number) {
   const others = files.filter((f) => !f.type.startsWith('image/'));
-  if (!others.length) return false;
+  if (!others.length || !editor) return false;
+  const spot = holdPosition(editor, pos ?? editor.state.selection.from);
   void (async () => {
-    for (const file of others) {
-      try {
-        const a = await processAttachmentFile(file);
-        insertFileBlockIntoView(view, a, pos);
-      } catch (err) {
-        if (err instanceof FileTooLargeError) toast(err.message, 'error');
-        else console.error('[editor] file insert failed', err);
+    try {
+      for (const file of others) {
+        try {
+          const a = await processAttachmentFile(file);
+          spot.insert({ type: 'fileBlock', attrs: a }, { keep: true });
+        } catch (err) {
+          if (err instanceof FileTooLargeError) toast(err.message, 'error');
+          else console.error('[editor] file insert failed', err);
+        }
       }
+    } finally {
+      spot.release();
     }
   })();
   return true;
@@ -520,7 +505,7 @@ export function Editor({ content, editable, onChange, onFocusChange, focusText, 
           const files = Array.from(event.clipboardData?.files ?? []);
           if (files.some((f) => f.type.startsWith('image/'))) {
             event.preventDefault();
-            return handleImageFiles(view, files);
+            return handleImageFiles(editorRef.current, files);
           }
           // A lone URL pasted into an empty selection becomes a card: an embed for a
           // known provider (YouTube, Spotify, Maps, Docs), a bookmark otherwise. With
@@ -569,18 +554,31 @@ export function Editor({ content, editable, onChange, onFocusChange, focusText, 
           if (editorRef.current && blocks) {
             const ed = editorRef.current;
             event.preventDefault();
+            const spot = holdPosition(ed);
             void (async () => {
-              for (const b of blocks) {
-                if (b.type === 'table') {
-                  const id = await useData.getState().createTableFromData('Table', b.table.headers, b.table.rows);
-                  if (id) ed.chain().focus().insertContent({ type: 'tableEmbed', attrs: { tableId: id } }).run();
-                } else {
-                  pasteRichText(ed, b.text);
+              try {
+                for (const b of blocks) {
+                  if (b.type === 'table') {
+                    const id = await useData.getState().createTableFromData('Table', b.table.headers, b.table.rows);
+                    if (id) spot.insert({ type: 'tableEmbed', attrs: { tableId: id } }, { keep: true });
+                  } else if (!ed.isDestroyed) {
+                    if (ed.state.selection.from !== spot.get()) ed.commands.setTextSelection(spot.get());
+                    pasteRichText(ed, b.text);
+                    spot.set(ed.state.selection.from);
+                  }
                 }
+              } finally {
+                spot.release();
               }
             })();
             return true;
           }
+          // Formatted copies (from this editor, a web page, a document) paste as
+          // they are; only plain text and markdown go through the conversions here.
+          // Markdown is checked on the plain copy, since code editors put an HTML
+          // copy of it on the clipboard too.
+          const html = event.clipboardData?.getData('text/html') ?? '';
+          if (html && (html.includes('data-pm-slice') || !looksMarkdownText(text))) return false;
           // Keep multi-line text from collapsing onto one line.
           if (editorRef.current && pasteRichText(editorRef.current, text)) {
             event.preventDefault();
@@ -592,8 +590,8 @@ export function Editor({ content, editable, onChange, onFocusChange, focusText, 
           const files = Array.from(event.dataTransfer?.files ?? []);
           if (!files.length) return false;
           const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-          const hadImage = handleImageFiles(view, files, pos);
-          const hadFile = handleAttachmentFiles(view, files, pos);
+          const hadImage = handleImageFiles(editorRef.current, files, pos);
+          const hadFile = handleAttachmentFiles(editorRef.current, files, pos);
           if (hadImage || hadFile) {
             event.preventDefault();
             return true;
@@ -716,7 +714,8 @@ export function Editor({ content, editable, onChange, onFocusChange, focusText, 
         if (r.page === pageId && r.thread) void recompute();
       })
       .then((fn) => {
-        unsub = fn;
+        if (!alive) void fn();
+        else unsub = fn;
       })
       .catch(() => {});
     return () => {

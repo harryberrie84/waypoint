@@ -421,15 +421,43 @@ migrate(
                         "max": 5000000,
                         "pattern": ""
                     }
+                },
+                {
+                    "system": false,
+                    "id": "00014kp2nh",
+                    "name": "trashed",
+                    "type": "bool",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {}
+                },
+                {
+                    "system": false,
+                    "id": "0001n4pno3",
+                    "name": "trashedWith",
+                    "type": "text",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {
+                        "min": null,
+                        "max": 20,
+                        "pattern": ""
+                    }
                 }
             ],
-            "listRule": "(@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id || viewers.id ?= @request.auth.id)) || (publicToken != \"\" && publicToken = @request.query.token)",
-            "viewRule": "(@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id || viewers.id ?= @request.auth.id)) || (publicToken != \"\" && publicToken = @request.query.token)",
-            "createRule": "@request.auth.id != \"\"",
-            "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id)",
-            "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors.id ?= @request.auth.id)",
+            "listRule": "(@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors:each ?= @request.auth.id || viewers:each ?= @request.auth.id)) || (publicToken != \"\" && publicToken = @request.query.token && trashed != true)",
+            "viewRule": "(@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors:each ?= @request.auth.id || viewers:each ?= @request.auth.id)) || (publicToken != \"\" && publicToken = @request.query.token && trashed != true)",
+            "createRule": "@request.auth.id != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")",
+            "updateRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors:each ?= @request.auth.id) && (@request.data.workspace:isset = false || (@collection.workspace_members:nwm.workspace ?= @request.data.workspace && @collection.workspace_members:nwm.user ?= @request.auth.id && @collection.workspace_members:nwm.role ?!= \"viewer\")) && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\") && (owner = @request.auth.id || editors:each ?= @request.auth.id || viewers:length = 0 || viewers.id != @request.auth.id) && (owner = @request.auth.id || (@request.data.owner:isset = false && @request.data.visibility:isset = false && @request.data.publicToken:isset = false && @request.data.editors:isset = false && @request.data.viewers:isset = false))",
+            "deleteRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors:each ?= @request.auth.id) && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\") && (owner = @request.auth.id || editors:each ?= @request.auth.id || viewers:length = 0 || viewers.id != @request.auth.id) && (owner = @request.auth.id || (workspace.owner = @request.auth.id || (@collection.workspace_members:adm.workspace ?= workspace && @collection.workspace_members:adm.user ?= @request.auth.id && @collection.workspace_members:adm.role ?= \"admin\")))",
             "id": "wpcolpages00001",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_pages_workspace` ON `pages` (`workspace`)",
+                "CREATE INDEX `idx_pages_parent` ON `pages` (`parent`)",
+                "CREATE INDEX `idx_pages_updated` ON `pages` (`updated`)"
+            ]
         },
         {
             "name": "tables",
@@ -501,15 +529,42 @@ migrate(
                         "max": null,
                         "pattern": ""
                     }
+                },
+                {
+                    "system": false,
+                    "id": "00003homn9",
+                    "name": "views",
+                    "type": "json",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {
+                        "maxSize": 2000000
+                    }
+                },
+                {
+                    "system": false,
+                    "id": "000015fv3n",
+                    "name": "automations",
+                    "type": "json",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {
+                        "maxSize": 2000000
+                    }
                 }
             ],
-            "listRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "viewRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "createRule": "@request.auth.id != \"\"",
-            "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+            "listRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "viewRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "createRule": "@request.auth.id != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")",
+            "updateRule": "@request.auth.id != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\") && (@request.data.workspace:isset = false || (@collection.workspace_members:nwm.workspace ?= @request.data.workspace && @collection.workspace_members:nwm.user ?= @request.auth.id && @collection.workspace_members:nwm.role ?!= \"viewer\"))",
+            "deleteRule": "@request.auth.id != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")",
             "id": "wpcoltables0001",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_tables_workspace` ON `tables` (`workspace`)",
+                "CREATE INDEX `idx_tables_updated` ON `tables` (`updated`)"
+            ]
         },
         {
             "name": "table_rows",
@@ -607,13 +662,17 @@ migrate(
                     }
                 }
             ],
-            "listRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "viewRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "createRule": "@request.auth.id != \"\"",
-            "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+            "listRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "viewRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "createRule": "@request.auth.id != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")",
+            "updateRule": "@request.auth.id != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\") && (@request.data.workspace:isset = false || (@collection.workspace_members:nwm.workspace ?= @request.data.workspace && @collection.workspace_members:nwm.user ?= @request.auth.id && @collection.workspace_members:nwm.role ?!= \"viewer\"))",
+            "deleteRule": "@request.auth.id != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")",
             "id": "wpcoltablerows1",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_table_rows_table` ON `table_rows` (`table`)",
+                "CREATE INDEX `idx_table_rows_workspace` ON `table_rows` (`workspace`)",
+                "CREATE INDEX `idx_table_rows_updated` ON `table_rows` (`updated`)"
+            ]
         },
         {
             "name": "comments",
@@ -708,13 +767,17 @@ migrate(
                     }
                 }
             ],
-            "listRule": "@request.auth.id != \"\" && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "viewRule": "@request.auth.id != \"\" && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "createRule": "@request.auth.id != \"\" && author = @request.auth.id",
-            "updateRule": "author = @request.auth.id",
+            "listRule": "@request.auth.id != \"\" && (@collection.workspace_members:pmem.workspace ?= page.workspace && @collection.workspace_members:pmem.user ?= @request.auth.id) && (page.visibility != \"private\" || page.owner = @request.auth.id || page.editors:each ?= @request.auth.id || page.viewers:each ?= @request.auth.id)",
+            "viewRule": "@request.auth.id != \"\" && (@collection.workspace_members:pmem.workspace ?= page.workspace && @collection.workspace_members:pmem.user ?= @request.auth.id) && (page.visibility != \"private\" || page.owner = @request.auth.id || page.editors:each ?= @request.auth.id || page.viewers:each ?= @request.auth.id)",
+            "createRule": "@request.auth.id != \"\" && author = @request.auth.id && (@collection.workspace_members:wpm.workspace ?= page.workspace && @collection.workspace_members:wpm.user ?= @request.auth.id && @collection.workspace_members:wpm.role ?!= \"viewer\") && (page.visibility != \"private\" || page.owner = @request.auth.id || page.editors:each ?= @request.auth.id || page.viewers:each ?= @request.auth.id) && (@request.data.authorName = @request.auth.name || @request.data.authorName = @request.auth.email)",
+            "updateRule": "author = @request.auth.id && @request.data.page:isset = false && @request.data.author:isset = false && (@collection.workspace_members:wpm.workspace ?= page.workspace && @collection.workspace_members:wpm.user ?= @request.auth.id && @collection.workspace_members:wpm.role ?!= \"viewer\") && (@request.data.authorName:isset = false || @request.data.authorName = @request.auth.name || @request.data.authorName = @request.auth.email)",
             "deleteRule": "author = @request.auth.id",
             "id": "wpcolcomments01",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_comments_page` ON `comments` (`page`)",
+                "CREATE INDEX `idx_comments_thread` ON `comments` (`thread`)",
+                "CREATE INDEX `idx_comments_row` ON `comments` (`row`)"
+            ]
         },
         {
             "name": "presence",
@@ -817,13 +880,16 @@ migrate(
                     }
                 }
             ],
-            "listRule": "@request.auth.id != \"\" && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "viewRule": "@request.auth.id != \"\" && page.workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "createRule": "@request.auth.id != \"\" && user = @request.auth.id",
-            "updateRule": "user = @request.auth.id",
+            "listRule": "@request.auth.id != \"\" && @collection.workspace_members:pmem.workspace ?= page.workspace && @collection.workspace_members:pmem.user ?= @request.auth.id",
+            "viewRule": "@request.auth.id != \"\" && @collection.workspace_members:pmem.workspace ?= page.workspace && @collection.workspace_members:pmem.user ?= @request.auth.id",
+            "createRule": "@request.auth.id != \"\" && user = @request.auth.id && (@collection.workspace_members:pmem.workspace ?= page.workspace && @collection.workspace_members:pmem.user ?= @request.auth.id)",
+            "updateRule": "user = @request.auth.id && (@request.data.user:isset = false || @request.data.user = @request.auth.id) && (@request.data.page:isset = false || @request.data.page.workspace.workspace_members_via_workspace.user ?= @request.auth.id)",
             "deleteRule": "user = @request.auth.id",
             "id": "wpcolpresence01",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_presence_page` ON `presence` (`page`)",
+                "CREATE INDEX `idx_presence_user` ON `presence` (`user`)"
+            ]
         },
         {
             "name": "workspaces",
@@ -886,6 +952,20 @@ migrate(
                     "presentable": false,
                     "unique": false,
                     "options": {}
+                },
+                {
+                    "system": false,
+                    "id": "0001ffbu60",
+                    "name": "numberStyle",
+                    "type": "text",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {
+                        "min": null,
+                        "max": 20,
+                        "pattern": ""
+                    }
                 }
             ],
             "listRule": "@request.auth.id != \"\" && workspace_members_via_workspace.user ?= @request.auth.id",
@@ -973,11 +1053,11 @@ migrate(
             "indexes": [
                 "CREATE UNIQUE INDEX idx_member_unique ON workspace_members (workspace, user)"
             ],
-            "listRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "viewRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "createRule": "@request.auth.id != \"\" && @request.data.user = @request.auth.id && (@request.data.workspace.owner ?= @request.auth.id || (@collection.workspace_invites.workspace ?= @request.data.workspace && @collection.workspace_invites.email ?= @request.auth.email && @collection.workspace_invites.status ?= \"pending\"))",
-            "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+            "listRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "viewRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "createRule": "@request.auth.id != \"\" && @request.data.user = @request.auth.id && @request.data.workspace.owner ?= @request.auth.id",
+            "updateRule": "@request.auth.id != \"\" && @request.data.workspace:isset = false && @request.data.user:isset = false && (@request.data.publicKey:isset = false || user = @request.auth.id) && ((workspace.owner = @request.auth.id || (@collection.workspace_members:adm.workspace ?= workspace && @collection.workspace_members:adm.user ?= @request.auth.id && @collection.workspace_members:adm.role ?= \"admin\")) || (user = @request.auth.id && @request.data.role:isset = false)) && (user != workspace.owner || @request.auth.id = workspace.owner)",
+            "deleteRule": "@request.auth.id != \"\" && (user = @request.auth.id || (workspace.owner = @request.auth.id || (@collection.workspace_members:adm.workspace ?= workspace && @collection.workspace_members:adm.user ?= @request.auth.id && @collection.workspace_members:adm.role ?= \"admin\"))) && (user != workspace.owner || @request.auth.id = workspace.owner)",
             "id": "wpcolwsmembers1"
         },
         {
@@ -1056,6 +1136,20 @@ migrate(
                             "accepted"
                         ]
                     }
+                },
+                {
+                    "system": false,
+                    "id": "0000i1f389",
+                    "name": "tokenHash",
+                    "type": "text",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {
+                        "min": null,
+                        "max": 128,
+                        "pattern": ""
+                    }
                 }
             ],
             "listRule": "@request.auth.id != \"\" && (workspace.workspace_members_via_workspace.user ?= @request.auth.id || email = @request.auth.email)",
@@ -1064,7 +1158,9 @@ migrate(
             "updateRule": null,
             "deleteRule": "@request.auth.id != \"\" && (workspace.owner ?= @request.auth.id || email = @request.auth.email)",
             "id": "wpcolwsinvites1",
-            "indexes": []
+            "indexes": [
+                "CREATE INDEX `idx_workspace_invites_email` ON `workspace_invites` (`email`)"
+            ]
         },
         {
             "name": "user_keys",
@@ -1225,11 +1321,11 @@ migrate(
             "indexes": [
                 "CREATE UNIQUE INDEX idx_workspace_keys ON workspace_keys (workspace, user)"
             ],
-            "listRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "viewRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "createRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "updateRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
-            "deleteRule": "@request.auth.id != \"\" && workspace.workspace_members_via_workspace.user ?= @request.auth.id",
+            "listRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "viewRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "createRule": "@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "updateRule": "@request.auth.id != \"\" && (@collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id) && (user = @request.auth.id || (workspace.owner = @request.auth.id || (@collection.workspace_members:adm.workspace ?= workspace && @collection.workspace_members:adm.user ?= @request.auth.id && @collection.workspace_members:adm.role ?= \"admin\"))) && @request.data.workspace:isset = false",
+            "deleteRule": "@request.auth.id != \"\" && (@collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id) && (user = @request.auth.id || (workspace.owner = @request.auth.id || (@collection.workspace_members:adm.workspace ?= workspace && @collection.workspace_members:adm.user ?= @request.auth.id && @collection.workspace_members:adm.role ?= \"admin\")))",
             "id": "wpcolwskeys0001"
         },
         {
@@ -1297,11 +1393,11 @@ migrate(
             "indexes": [
                 "CREATE INDEX `idx_yupdates_page` ON `yupdates` (`page`)"
             ],
-            "listRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
-            "viewRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
-            "createRule": "@request.auth.id != \"\"",
+            "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id && @collection.pages:pg.id ?= page && @collection.pages:pg.workspace ?= workspace && (@collection.pages:pg.visibility ?!= \"private\" || @collection.pages:pg.owner ?= @request.auth.id || @collection.pages:pg.editors.id ?= @request.auth.id || @collection.pages:pg.viewers.id ?= @request.auth.id)",
+            "viewRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id && @collection.pages:pg.id ?= page && @collection.pages:pg.workspace ?= workspace && (@collection.pages:pg.visibility ?!= \"private\" || @collection.pages:pg.owner ?= @request.auth.id || @collection.pages:pg.editors.id ?= @request.auth.id || @collection.pages:pg.viewers.id ?= @request.auth.id)",
+            "createRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\") && @collection.pages:pw.id ?= page && @collection.pages:pw.workspace ?= workspace && (@collection.pages:pw.owner ?= @request.auth.id || @collection.pages:pw.editors.id ?= @request.auth.id || (@collection.pages:pw.visibility ?!= \"private\" && @collection.pages:pw.viewers !~ @request.auth.id))",
             "updateRule": null,
-            "deleteRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))"
+            "deleteRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\") && @collection.pages:pw.id ?= page && @collection.pages:pw.workspace ?= workspace && (@collection.pages:pw.owner ?= @request.auth.id || @collection.pages:pw.editors.id ?= @request.auth.id || (@collection.pages:pw.visibility ?!= \"private\" && @collection.pages:pw.viewers !~ @request.auth.id))"
         },
         {
             "name": "page_versions",
@@ -1354,11 +1450,11 @@ migrate(
             "indexes": [
                 "CREATE INDEX `idx_page_versions_page` ON `page_versions` (`page`)"
             ],
-            "listRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
-            "viewRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
-            "createRule": "@request.auth.id != \"\"",
+            "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id && @collection.pages:pg.id ?= page && @collection.pages:pg.workspace ?= workspace && (@collection.pages:pg.visibility ?!= \"private\" || @collection.pages:pg.owner ?= @request.auth.id || @collection.pages:pg.editors.id ?= @request.auth.id || @collection.pages:pg.viewers.id ?= @request.auth.id)",
+            "viewRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id && @collection.pages:pg.id ?= page && @collection.pages:pg.workspace ?= workspace && (@collection.pages:pg.visibility ?!= \"private\" || @collection.pages:pg.owner ?= @request.auth.id || @collection.pages:pg.editors.id ?= @request.auth.id || @collection.pages:pg.viewers.id ?= @request.auth.id)",
+            "createRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\") && @collection.pages:pw.id ?= page && @collection.pages:pw.workspace ?= workspace && (@collection.pages:pw.owner ?= @request.auth.id || @collection.pages:pw.editors.id ?= @request.auth.id || (@collection.pages:pw.visibility ?!= \"private\" && @collection.pages:pw.viewers !~ @request.auth.id))",
             "updateRule": null,
-            "deleteRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))"
+            "deleteRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\") && @collection.pages:pw.id ?= page && @collection.pages:pw.workspace ?= workspace && (@collection.pages:pw.owner ?= @request.auth.id || @collection.pages:pw.editors.id ?= @request.auth.id || (@collection.pages:pw.visibility ?!= \"private\" && @collection.pages:pw.viewers !~ @request.auth.id))"
         },
         {
             "name": "uploads",
@@ -1410,12 +1506,14 @@ migrate(
                     }
                 }
             ],
-            "indexes": [],
-            "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
+            "indexes": [
+                "CREATE INDEX `idx_uploads_workspace` ON `uploads` (`workspace`)"
+            ],
+            "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
             "viewRule": "",
-            "createRule": "@request.auth.id != \"\"",
+            "createRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\"))",
             "updateRule": null,
-            "deleteRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id"
+            "deleteRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")"
         },
         {
             "name": "file_trash",
@@ -1521,12 +1619,14 @@ migrate(
                     }
                 }
             ],
-            "indexes": [],
-            "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
-            "viewRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
-            "createRule": "@request.auth.id != \"\"",
-            "updateRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id",
-            "deleteRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id"
+            "indexes": [
+                "CREATE INDEX `idx_file_trash_workspace` ON `file_trash` (`workspace`)"
+            ],
+            "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "viewRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "createRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")",
+            "updateRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")",
+            "deleteRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")"
         },
         {
             "name": "reminders",
@@ -1605,11 +1705,11 @@ migrate(
             "indexes": [
                 "CREATE INDEX `idx_reminders_sent` ON `reminders` (`sent`)"
             ],
-            "listRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
-            "viewRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
-            "createRule": "@request.auth.id != \"\"",
-            "updateRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))",
-            "deleteRule": "@request.auth.id != \"\" && (workspace = \"\" || (@collection.workspace_members.workspace ?= workspace && @collection.workspace_members.user ?= @request.auth.id))"
+            "listRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "viewRule": "@request.auth.id != \"\" && workspace != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id",
+            "createRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")",
+            "updateRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")",
+            "deleteRule": "@request.auth.id != \"\" && workspace != \"\" && (@collection.workspace_members:wm.workspace ?= workspace && @collection.workspace_members:wm.user ?= @request.auth.id && @collection.workspace_members:wm.role ?!= \"viewer\")"
         }
     ];
 
@@ -1670,7 +1770,11 @@ migrate(
         "1700000010_private_pages_and_collection_scope.js",
         "1700000011_reminders.js",
         "1700000012_user_prefs.js",
-        "1700000013_presence_cursor.js"
+        "1700000013_presence_cursor.js",
+        "1700000014_missing_fields_and_indexes.js",
+        "1700000015_narrow_write_rules.js",
+        "1700000016_stamp_orphan_workspaces.js",
+        "1700000018_trashed_with.js"
     ];
     var stamp = Date.now() * 1000;
     for (var m = 0; m < later.length; m++) {

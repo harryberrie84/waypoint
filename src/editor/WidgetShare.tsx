@@ -112,7 +112,7 @@ export function WidgetShare({ attrs, updateAttributes, docOf, title, label }: Pr
                 type="button"
                 onClick={() => void create()}
                 disabled={busy}
-                className="flex w-full items-center justify-center gap-1.5 rounded-md bg-clay px-3 py-1.5 text-xs font-medium text-white hover:bg-clay/90 disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-clay px-3 py-1.5 text-xs font-medium text-white hover:bg-clay/90 disabled:opacity-50"
               >
                 <Share2 className="h-3.5 w-3.5" /> {busy ? 'Creating…' : 'Create a read-only link'}
               </button>

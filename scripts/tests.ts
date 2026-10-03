@@ -13,6 +13,9 @@ import type { Workspace, WorkspaceMember, WorkspaceInvite } from '../src/types.t
 import { attachmentOf, geoOf, cellText, matchFilter, groupRows, rowColor, rowTitle, type ColorRule } from '../src/lib/tableQuery.ts';
 import { parseDelimited, planImport } from '../src/lib/csv.ts';
 import { parseLocaleNumber } from '../src/lib/number.ts';
+import { sortByKey, loadAllByKeyset, KEYSET_PAGE } from '../src/lib/keyset.ts';
+import { PAGE_LIST_FIELDS } from '../src/lib/pageFields.ts';
+import { readFileSync } from 'node:fs';
 import { isEmptyDoc, hasWidgetBlock, extractTableIds, remapTableIds, setImageThreadId } from '../src/lib/doc.ts';
 import { derivePlacePins, placeTablesForWorkspace, placeRowCells, nextSourceColor, SOURCE_COLORS } from '../src/lib/mapPins.ts';
 import { gridsByPage } from '../src/lib/grids.ts';
@@ -35,11 +38,12 @@ import { modKey, undoHint, searchHint, isSearchShortcut, isLinux } from '../src/
 import { defaultTiers, buildTierRows, tierForRating, ratingForInsert } from '../src/lib/tierList.ts';
 import { beginWrite, endWrite, isWriting, isStaleRecord, keepPendingFields, resetWrites } from '../src/lib/proseSync.ts';
 import { keyTrustStatus } from '../src/lib/keyTrust.ts';
+import { widgetFor, formulaReady, weightedPick, nextActive, groupRows as widgetGroups, daysFrom, relativeDays, dueTone, nightsBetween, WIDGET_SPECS, PRESET_TABLE_NAMES } from '../src/lib/tableWidgets.ts';
 import { buildSetlistHtml, buildQuizHtml } from '../src/lib/widgetExport.ts';
 import {
   selectChildren, selectTopLevel, selectTemplates, selectTrashRoots,
   pageWorkspaceId, selectWorkspacePages, selectWorkspaceTables, selectBreadcrumb, selectRowsForTable,
-  selectUnfiledPages,
+  selectUnfiledPages, pagesToTrash, pagesToRestore, pagesToDelete,
 } from '../src/lib/pageTree.ts';
 import { selectMyRole, canEdit as canEditPage, canManageSharing } from '../src/lib/permissions.ts';
 import { serializeSetlist, parseSetlist, SETLIST_TEMPLATE, type SetItem } from '../src/lib/setlistIO.ts';
@@ -72,7 +76,7 @@ import { isHoliday, countWorkdays, countDaysOff } from '../src/lib/swedishHolida
 import { publishRef, lookupRef, clearRef } from '../src/lib/refRegistry.ts';
 import { extractPageLinks, buildLinkGraph, outboundOf, backlinksOf } from '../src/lib/pageLinks.ts';
 import { searchEmoji } from '../src/lib/emoji.ts';
-import { hasInlineMarkdown, parseInlineMarkdown } from '../src/lib/inlineMarkdown.ts';
+import { hasInlineMarkdown, parseInlineMarkdown, looksLikeCode } from '../src/lib/inlineMarkdown.ts';
 import { onThisDay } from '../src/lib/agenda.ts';
 import { parseGithubUrl } from '../src/lib/github.ts';
 import { isImageIcon } from '../src/lib/pageIcon.ts';
@@ -135,6 +139,8 @@ import { appendCapture } from '../src/lib/capture.ts';
 import { STARTERS } from '../src/lib/starters.ts';
 import { buildSearchIndex, searchIndex, bestMatchWord } from '../src/lib/search.ts';
 import { splitCells } from '../src/lib/cellCrypto.ts';
+import { mergeById, mergeCells } from '../src/lib/merge.ts';
+import { buildScope as scopeOf, cellNumber as numberOf, ownFormulaKey, formulaFor, computedCells, queryRows } from '../src/lib/scope.ts';
 import { forecastList, type DayWeather } from '../src/lib/weather.ts';
 import { serializeChecklist, parseChecklist, PACKING_TEMPLATE, READINESS_TEMPLATE } from '../src/lib/checklistIO.ts';
 import { serializeVote, parseVote, VOTE_TEMPLATE } from '../src/lib/voteIO.ts';
@@ -1351,8 +1357,9 @@ test('normalizeEmail lowercases + trims so the claim hook matches the signup', (
 });
 
 test('readInviteFromSearch pulls the prefill, ignores junk', () => {
-  eq(readInviteFromSearch('?invite=bob%40x.com&ws=Fukuoka%20Trip'), { email: 'bob@x.com', workspace: 'Fukuoka Trip' });
-  eq(readInviteFromSearch('?invite=anna@x.com'), { email: 'anna@x.com', workspace: '' });
+  eq(readInviteFromSearch('?invite=bob%40x.com&ws=Fukuoka%20Trip'), { email: 'bob@x.com', workspace: 'Fukuoka Trip', token: '' });
+  eq(readInviteFromSearch('?invite=anna@x.com'), { email: 'anna@x.com', workspace: '', token: '' });
+  eq(readInviteFromSearch('?invite=anna@x.com&t=abc_-123'), { email: 'anna@x.com', workspace: '', token: 'abc_-123' }, 'the one-time invite secret rides along');
   eq(readInviteFromSearch('?invite=notanemail'), null, 'must look like an email');
   eq(readInviteFromSearch(''), null, 'no param → null');
   eq(readInviteFromSearch('?other=1'), null, 'unrelated query → null');
@@ -2803,6 +2810,15 @@ test('appendCapture appends a new list after non-list content, never mutating in
   eq(doc.content.length, 1, 'original untouched');
 });
 
+test('no starter has an empty text node, which the editor refuses and opens the page blank', () => {
+  const empties = (n: unknown): number => {
+    if (!n || typeof n !== 'object') return 0;
+    const node = n as { type?: string; text?: string; content?: unknown[] };
+    return (node.type === 'text' && !node.text ? 1 : 0) + (node.content ?? []).reduce((a: number, c) => a + empties(c), 0);
+  };
+  for (const s of STARTERS) eq(empties(s.build()), 0, `${s.key} empty text nodes`);
+});
+
 test('starters build valid docs and a blank notebook', () => {
   const blank = STARTERS.find((s) => s.key === 'blank');
   ok(blank, 'blank exists');
@@ -3896,6 +3912,31 @@ test('pageTree: selectTrashRoots returns only subtree roots, newest first', () =
     c: mkPage({ id: 'c', trashed: true, updated: '2024-01-01' }),
   };
   eq(selectTrashRoots(pages).map((p) => p.id), ['a', 'c'], 'roots only, newest first');
+});
+
+test('pageTree: trash, restore and delete only take what went to the trash together', () => {
+  const pages: Record<string, Page> = {
+    top: mkPage({ id: 'top', parent: '' }),
+    p: mkPage({ id: 'p', parent: 'top', trashed: true, trashedWith: 'p' }),
+    gone: mkPage({ id: 'gone', parent: 'p', trashed: true, trashedWith: 'p' }),
+    alone: mkPage({ id: 'alone', parent: 'p', trashed: true, trashedWith: 'alone' }),
+    aloneKid: mkPage({ id: 'aloneKid', parent: 'alone', trashed: true, trashedWith: 'alone' }),
+    live: mkPage({ id: 'live', parent: 'p' }),
+    liveKid: mkPage({ id: 'liveKid', parent: 'live' }),
+    legacy: mkPage({ id: 'legacy', parent: 'gone', trashed: true }),
+  };
+  const del = pagesToDelete(pages, 'p');
+  eq(new Set(del.remove), new Set(['p', 'gone', 'legacy']), 'deleting for good takes only what was trashed with it');
+  eq(new Set(del.rehome), new Set(['alone', 'live']), 'a live sub-page and one trashed on its own move out');
+  eq(del.home, 'top', 'they move to the nearest page outside the trash');
+  ok(del.remove.indexOf('legacy') < del.remove.indexOf('gone') && del.remove.indexOf('gone') < del.remove.indexOf('p'), 'deepest first');
+  eq(new Set(pagesToRestore(pages, 'p')), new Set(['p', 'gone', 'legacy']), 'restoring leaves the one trashed on its own in the trash');
+  eq(selectTrashRoots(pages).map((p) => p.id).sort(), ['alone', 'p'], 'a page trashed on its own keeps its own trash entry');
+  eq(new Set(pagesToTrash({ ...pages, p: mkPage({ id: 'p', parent: 'top' }) }, 'p')), new Set(['p', 'live', 'liveKid']), 'trashing skips sub-pages already in the trash');
+  const live = pagesToDelete({ ...pages, p: mkPage({ id: 'p', parent: 'top' }) }, 'p');
+  eq(live.rehome, [], 'a page outside the trash takes its whole tree');
+  eq(live.remove.length, 7, 'the whole tree');
+  eq(pagesToDelete({ a: mkPage({ id: 'a', parent: 'b', trashed: true, trashedWith: 'a' }), b: mkPage({ id: 'b', parent: 'a', trashed: true, trashedWith: 'b' }) }, 'a').home, '', 'a parent loop does not hang');
 });
 
 test('pageTree: selectTemplates sorts by title and skips trashed', () => {
@@ -5490,6 +5531,199 @@ test('fxBoard: rate lines read in both directions, and age is coarse', () => {
   eq(describeAge(1000, 1000), 'updated just now', 'fresh');
   eq(describeAge(1, 1 + 3 * 3600_000), 'updated 3 h ago', 'hours');
   eq(describeAge(1, 1 + 50 * 3600_000), 'updated 2 days ago', 'days');
+});
+
+test('keyset: sortByKey restores the server order, ids breaking ties', () => {
+  const rows = [
+    { id: 'c', position: 2 }, { id: 'a', position: 10 }, { id: 'b', position: 2 }, { id: 'd', position: 0 },
+  ];
+  eq(sortByKey(rows, 'position').map((r) => r.id).join(''), 'dbca', 'numbers compare as numbers (10 after 2), equal ones by id');
+  const t = [{ id: 'y', created: '2026-01-02 10:00:00.000Z' }, { id: 'x', created: '2026-01-02 10:00:00.000Z' }, { id: 'z', created: '2025-12-31 09:00:00.000Z' }];
+  eq(sortByKey(t, 'created').map((r) => r.id).join(''), 'zxy', 'timestamps compare as text, equal ones by id');
+  eq(sortByKey([{ id: 'b' }, { id: 'a', order: 1 }], 'order').map((r) => r.id).join(''), 'ba', 'a missing key sorts first');
+  eq(rows.map((r) => r.id).join(''), 'cabd', 'the input is left as it was');
+});
+
+await testAsync('keyset: loadAllByKeyset reads every page, and stops on a short or stuck one', async () => {
+  const all = Array.from({ length: KEYSET_PAGE * 2 + 7 }, (_, i) => ({ id: String(i).padStart(6, '0') }));
+  const asked: string[] = [];
+  const got = await loadAllByKeyset(async (after) => {
+    asked.push(after);
+    return all.filter((r) => r.id > after).slice(0, KEYSET_PAGE);
+  });
+  eq(got.length, all.length, 'every row, once');
+  eq(new Set(got.map((r) => r.id)).size, all.length, 'no repeats');
+  eq(asked.length, 3, 'three requests for two full pages and a short one');
+  let calls = 0;
+  const stuck = await loadAllByKeyset(async () => {
+    calls++;
+    return all.slice(0, KEYSET_PAGE);
+  });
+  eq(calls, 2, 'a page that does not move forward ends the load instead of looping');
+  eq(stuck.length, KEYSET_PAGE * 2, 'and keeps what it read');
+});
+
+test('selectChildren from the index matches a full scan, trashed and order included', () => {
+  const pages: Record<string, Page> = {};
+  for (let i = 0; i < 300; i++) {
+    const id = 'p' + i;
+    pages[id] = { id, title: id, icon: '', parent: i < 10 ? '' : 'p' + (i % 10), order: (i * 7) % 13, content: null, trashed: i % 17 === 0 } as unknown as Page;
+  }
+  const scan = (parent: string) => Object.values(pages).filter((p) => p.parent === parent && !p.trashed).sort((a, b) => a.order - b.order).map((p) => p.id).join();
+  for (const parent of ['', 'p1', 'p4', 'p9', 'nope']) eq(selectChildren(pages, parent).map((p) => p.id).join(), scan(parent), `children of "${parent}"`);
+  const a = selectChildren(pages, 'p1');
+  a.pop();
+  eq(selectChildren(pages, 'p1').map((p) => p.id).join(), scan('p1'), 'a caller changing its copy leaves the index alone');
+  const next = { ...pages, p55: { ...pages.p55, parent: 'p2' } };
+  ok(selectChildren(next, 'p2').some((p) => p.id === 'p55'), 'a new pages map is indexed afresh');
+});
+
+test('unfiled and link scans re-read a page whose body changed, and only then', () => {
+  const doc = (to: string) => ({ type: 'doc', content: [{ type: 'pageRef', attrs: { pageId: to } }] });
+  const base: Record<string, Page> = {
+    a: { id: 'a', title: 'a', icon: '', parent: '', order: 0, workspace: 'w', content: doc('x') } as unknown as Page,
+    x: { id: 'x', title: 'x', icon: '', parent: 'gone', order: 0, workspace: 'w', content: null } as unknown as Page,
+  };
+  eq(selectUnfiledPages(base, 'w', 'w').length, 0, 'x is reachable through a link, so not unfiled');
+  const edited = { ...base, a: { ...base.a, content: doc('elsewhere') } };
+  eq(selectUnfiledPages(edited, 'w', 'w').map((p) => p.id).join(), 'x', 'once the link is gone from the new body, x is unfiled');
+  eq(outboundOf(buildLinkGraph(base, {}), 'a').join(), 'x', 'the graph follows the old body');
+  eq(outboundOf(buildLinkGraph(edited, {}), 'a').join(), '', 'and the new one');
+});
+
+test('the pages list asks for every page field but the Yjs snapshot', () => {
+  const schema = JSON.parse(readFileSync(new URL('../pocketbase/schema.json', import.meta.url), 'utf8')) as { name: string; schema: { name: string }[] }[];
+  const want = ['id', 'collectionId', 'collectionName', 'created', 'updated', ...schema.find((c) => c.name === 'pages')!.schema.map((f) => f.name).filter((n) => n !== 'ydoc')];
+  eq([...PAGE_LIST_FIELDS.split(',')].sort().join(), [...want].sort().join(), 'a page field missing here would load as empty and could be saved back empty; add it to lib/pageFields.ts');
+});
+
+test('every named preset opens as its own widget, and plain tables stay tables', () => {
+  for (const preset of Object.keys(PRESET_TABLE_NAMES)) {
+    const { columns } = buildTablePreset(preset as never);
+    const spec = widgetFor({ columns });
+    ok(!!spec, `the ${preset} preset has no widget view, so it opens as a bare grid`);
+    for (const name of [spec!.title, spec!.check, spec!.group, spec!.due, spec!.amount].filter(Boolean) as string[]) {
+      ok(columns.some((c) => c.name === name) || name.endsWith(' '), `${preset}: the widget reads a "${name}" column the preset does not make`);
+    }
+  }
+  for (const plain of ['grid', 'board', 'calendar', 'timeline', 'gallery', 'map', 'poll']) {
+    eq(widgetFor({ columns: buildTablePreset(plain as never).columns }), null, `a ${plain} someone inserted as a table must stay a table`);
+  }
+  eq(widgetFor({ columns: buildTablePreset('packing').columns, formKey: 'x' }), null, 'form tables are plumbing, not widgets');
+  ok(WIDGET_SPECS.every((s) => !/\u2014/.test(s.label + s.noun)), 'no em-dashes in widget copy');
+});
+
+test('a widget does not show a computed value until its inputs are filled', () => {
+  const { columns } = buildTablePreset('accommodation');
+  const id = (n: string) => columns.find((c) => c.name === n)!.id;
+  const total = columns.find((c) => c.name === 'Total')!;
+  const row = (cells: Record<string, unknown>) => ({ id: 'r', table: 't', cells, position: 0 }) as unknown as TableRow;
+  ok(!formulaReady(total, row({}), columns), 'an empty stay would otherwise read as costing 0');
+  ok(!formulaReady(total, row({ [id('Check-in')]: '2026-03-01', [id('Check-out')]: '2026-03-04' }), columns), 'no rate yet');
+  ok(formulaReady(total, row({ [id('Check-in')]: '2026-03-01', [id('Check-out')]: '2026-03-04', [id('Rate')]: 9000 }), columns), 'dates and rate given');
+  eq(nightsBetween('2026-03-01', '2026-03-04'), 3, 'three nights');
+  eq(nightsBetween('2026-03-04', '2026-03-01'), 0, 'dates the wrong way round are not negative nights');
+});
+
+test('days until a date, and how urgent it looks', () => {
+  const now = new Date(2026, 8, 28, 23, 30);
+  eq(daysFrom('2026-09-28', now), 0, 'late in the evening is still today');
+  eq(daysFrom('2026-09-29T08:00', now), 1, 'a datetime counts by calendar day');
+  eq(daysFrom('', now), null, 'no date');
+  eq(relativeDays(0) + '|' + relativeDays(1) + '|' + relativeDays(-2) + '|' + relativeDays(5), 'today|tomorrow|2 days ago|in 5 days', 'wording');
+  eq([dueTone(-1, false), dueTone(3, false), dueTone(30, false), dueTone(-1, true), dueTone(null, false)].join(), 'late,soon,later,done,none', 'a paid bill is never late');
+});
+
+test('roll tables respect weights, and the initiative turn moves in order', () => {
+  const w = { id: 'w', name: 'Weight', type: 'number' } as never;
+  const rows = [{ id: 'a', cells: { w: 1 } }, { id: 'b', cells: { w: 3 } }, { id: 'c', cells: { w: 0 } }] as unknown as TableRow[];
+  const counts: Record<string, number> = { a: 0, b: 0, c: 0 };
+  for (let i = 0; i < 400; i++) counts[weightedPick(rows, w, () => i / 400)!.id]++;
+  eq(counts.c, 0, 'a zero weight never comes up');
+  ok(counts.b > counts.a * 2, `weight 3 should come up about three times as often as weight 1 (${counts.b} vs ${counts.a})`);
+  const active = { id: 'act', name: 'Active', type: 'checkbox' } as never;
+  const order = [{ id: 'x', cells: {} }, { id: 'y', cells: { act: true } }, { id: 'z', cells: {} }] as unknown as TableRow[];
+  eq(JSON.stringify(nextActive(order, active)), JSON.stringify({ off: ['y'], on: 'z' }), 'next turn goes to the next in order');
+  eq(nextActive([order[0], { ...order[1], cells: {} }, { ...order[2], cells: { act: true } }] as TableRow[], active).on, 'x', 'after the last it wraps to the top');
+  eq(nextActive([order[0], { ...order[1], cells: {} }, order[2]] as TableRow[], active).on, 'x', 'with nobody active the first starts');
+});
+
+test('grouped widgets keep the option order and put ungrouped rows last', () => {
+  const col = { id: 'g', name: 'Aisle', type: 'select', options: [{ id: 'o1', label: 'Fruit' }, { id: 'o2', label: 'Dairy' }] } as never;
+  const rows = [{ id: '1', cells: { g: 'o2' } }, { id: '2', cells: {} }, { id: '3', cells: { g: 'o1' } }] as unknown as TableRow[];
+  eq(widgetGroups(rows, col).map((g) => `${g.label}:${g.rows.map((r) => r.id).join('')}`).join(' '), 'Fruit:3 Dairy:1 Other:2', 'groups');
+});
+
+test('a cell can carry its own formula, and everything reads the one that applies', () => {
+  const cols = [
+    { id: 'n', name: 'Nights', type: 'number' },
+    { id: 'r', name: 'Rate', type: 'number' },
+    { id: 't', name: 'Total', type: 'formula', formula: '[Nights] * [Rate]' },
+    { id: 'b', name: 'With tip', type: 'formula', formula: '[Total] + 10' },
+  ] as never as Column[];
+  const plain = { n: 3, r: 100 };
+  const own = { n: 3, r: 100, [ownFormulaKey('t')]: '[Nights] * [Rate] * 0.5' };
+  eq(scopeOf(cols, plain).Total, 300, 'the column formula');
+  eq(scopeOf(cols, own).Total, 150, 'this cell’s own formula wins');
+  eq(scopeOf(cols, own)['With tip'], 160, 'a formula reading an overridden cell sees the override');
+  eq(scopeOf(cols, { ...own, [ownFormulaKey('t')]: '  ' }).Total, 300, 'a blank override falls back to the column');
+  eq(formulaFor(cols[2], own), '[Nights] * [Rate] * 0.5', 'formulaFor');
+  const table = { id: 'x', name: 'x', columns: cols } as never as TableData;
+  eq(numberOf(table, { id: '1', cells: own } as never as TableRow, cols[2], {}), 150, 'totals and budgets read the override');
+  eq(computedCells(cols, own).t, 150, 'computed values carry the override');
+  const selfRef = { n: 3, r: 100, [ownFormulaKey('t')]: '[Total] + 1' };
+  ok(Number.isFinite(Number(scopeOf(cols, selfRef).Total)), 'a cell that reads itself settles instead of hanging');
+  const { secret, operational } = splitCells(own as never, cols);
+  ok(ownFormulaKey('t') in secret && !(ownFormulaKey('t') in operational), 'an override is encrypted with the rest of the row');
+});
+
+test('sorting and filtering on a formula column use the computed values', () => {
+  const cols = [
+    { id: 'n', name: 'Name', type: 'text' },
+    { id: 'a', name: 'A', type: 'number' },
+    { id: 'd', name: 'Double', type: 'formula', formula: '[A] * 2' },
+  ] as never as Column[];
+  const rows = [
+    { id: 'x', cells: { n: 'x', a: 5 }, position: 0 },
+    { id: 'y', cells: { n: 'y', a: 1 }, position: 1 },
+    { id: 'z', cells: { n: 'z', a: 3, [ownFormulaKey('d')]: '100' }, position: 2 },
+  ] as never as TableRow[];
+  const view = { id: 'v', name: 'v', type: 'grid', filters: [], sorts: [{ id: 's', columnId: 'd', dir: 'desc' }] } as never;
+  eq(queryRows(rows, cols, view).map((r) => r.id).join(''), 'zxy', 'sorted by the computed value, override included');
+  ok(queryRows(rows, cols, view)[0] === rows[2], 'the original row objects come back, not copies with computed values');
+  const filtered = queryRows(rows, cols, { ...view, sorts: [], filters: [{ id: 'f', columnId: 'd', op: 'gt', value: 5 }] } as never);
+  eq(filtered.map((r) => r.id).join(''), 'xz', 'filtered by the computed value');
+});
+
+test('two people editing different cells of one row both keep their edit', () => {
+  const server = { name: 'Alice typing', note: '' };
+  const mine = { name: 'old', note: 'Bob writes a note' };
+  eq(mergeCells(server, mine, ['note']), { name: 'Alice typing', note: 'Bob writes a note' }, 'only the cell I changed is written over the server copy');
+  eq(mergeCells({ a: 1, b: 2 }, { a: 1 }, ['b']), { a: 1 }, 'a cell I cleared is removed');
+});
+
+test('two people changing columns at once both keep their change', () => {
+  const base = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }];
+  const ours = [{ id: 'a', name: 'A renamed' }, { id: 'b', name: 'B' }, { id: 'n1', name: 'mine' }];
+  const theirs = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B by them' }, { id: 'c', name: 'C' }, { id: 'n2', name: 'theirs' }];
+  eq(
+    mergeById(base, ours, theirs).map((c) => `${c.id}:${c.name}`).join(),
+    'a:A renamed,b:B by them,n1:mine,n2:theirs',
+    'my rename, their rename, both new columns, and the column I deleted stays deleted',
+  );
+  eq(mergeById(base, base, base.filter((c) => c.id !== 'b')).map((c) => c.id).join(), 'a,c', 'a column they deleted and I did not touch stays deleted');
+});
+
+test('looksLikeCode: pasted lines become code only when they read as code', () => {
+  ok(!looksLikeCode('Hotel Nikko\n2-18-25 Hakata Ekimae\nFukuoka 812-0011'), 'an address');
+  ok(!looksLikeCode('milk\neggs\nbread'), 'a shopping list');
+  ok(!looksLikeCode('Meet at the station at nine.\nBring the tickets.'), 'two sentences');
+  ok(looksLikeCode('const a = 1;\nconsole.log(a);'), 'javascript');
+  ok(looksLikeCode('$ npm install\n$ npm run build'), 'shell commands');
+  ok(looksLikeCode('def go():\n    return 1'), 'python');
+  ok(looksLikeCode('<div>\n  <p>hi</p>\n</div>'), 'markup');
+  ok(looksLikeCode('if (x) {\n  y();\n}'), 'braces');
+  ok(!looksLikeCode('one line only;'), 'a single line is never a code block');
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);

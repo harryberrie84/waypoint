@@ -126,7 +126,7 @@ function LinkedView({
                   setMenu(false);
                   onRemove();
                 }}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-rose-500 hover:bg-rose-500/10"
               >
                 <Trash2 className="h-4 w-4" /> Remove this link
               </button>

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { ChevronRight, ChevronDown, ChevronsUpDown, Plus, FileText, Trash2, BookOpen, Lock, Users2, Check, Star, Home, Pencil } from 'lucide-react';
 import { useData, selectChildren, selectTopLevel, selectTemplates, selectWorkspacePages } from '../store/useData';
 import { selectUnfiledPages } from '../lib/pageTree';
@@ -90,14 +91,17 @@ export function Sidebar() {
   // Who's on each page right now, so their avatars show beside it in the tree.
   const presence = useWorkspacePresence();
   const [pins, setPins] = useState<Set<string>>(() => loadPins());
-  const togglePin = (id: string) =>
-    setPins((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      savePins(next);
-      return next;
-    });
+  const togglePin = useCallback(
+    (id: string) =>
+      setPins((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        savePins(next);
+        return next;
+      }),
+    [],
+  );
   const pinnedPages = [...pins].map((id) => scoped[id]).filter((p): p is Page => !!p && !p.trashed);
 
   // The per-workspace "home" page: land here when you switch into this workspace.
@@ -110,11 +114,14 @@ export function Sidebar() {
     window.addEventListener(LANDING_EVENT, onChange);
     return () => window.removeEventListener(LANDING_EVENT, onChange);
   }, [activeWorkspaceId]);
-  const toggleLanding = (id: string) => {
-    const next = landingId === id ? null : id; // click the current home again to clear it
-    saveLanding(activeWorkspaceId, next);
-    setLandingId(next);
-  };
+  const toggleLanding = useCallback(
+    (id: string) => {
+      const next = landingId === id ? null : id; // click the current home again to clear it
+      saveLanding(activeWorkspaceId, next);
+      setLandingId(next);
+    },
+    [landingId, activeWorkspaceId],
+  );
 
   // If the active page isn't in the active workspace (e.g. after a switch), drop
   // into that workspace's chosen home page, else its first page, so the main view
@@ -184,58 +191,56 @@ export function Sidebar() {
         <span className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint dark:text-coal-soft">
           Pages
         </span>
-        {roots[0] && (
-          <div className="flex items-center gap-0.5">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setTplOpen((o) => !o)}
-                className="rounded p-1 text-ink-faint hover:bg-paper-line hover:text-ink dark:hover:bg-coal-line dark:hover:text-coal-text"
-                title="New from template"
-              >
-                <BookOpen className="h-4 w-4" />
-              </button>
-              {tplOpen && (
-                <>
-                  <div className="fixed inset-0 z-20" onMouseDown={() => setTplOpen(false)} />
-                  <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-lg border border-paper-line bg-paper p-1 shadow-xl dark:border-coal-line dark:bg-coal-panel">
-                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint dark:text-coal-soft">
-                      New from template
-                    </div>
-                    {templates.length === 0 && (
-                      <p className="px-2 py-2 text-xs text-ink-faint dark:text-coal-soft">
-                        No templates yet. Open a page → ⋯ → Save as template.
-                      </p>
-                    )}
-                    {templates.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => {
-                          setTplOpen(false);
-                          void duplicatePage(t.id, roots[0].id).then((id) => id && setActivePage(id));
-                        }}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-ink hover:bg-paper-panel dark:text-coal-text dark:hover:bg-coal-line"
-                      >
-                        <span className="text-base leading-none">{t.icon || '📄'}</span>
-                        <span className="truncate">{t.title || 'Untitled'}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+        <div className="flex items-center gap-0.5">
+          <div className="relative">
             <button
               type="button"
-              onClick={() => createPage(roots[0].id)}
-              onMouseUp={blurOnMouse}
+              onClick={() => setTplOpen((o) => !o)}
               className="rounded p-1 text-ink-faint hover:bg-paper-line hover:text-ink dark:hover:bg-coal-line dark:hover:text-coal-text"
-              title="New top-level page"
+              title="New from template"
             >
-              <Plus className="h-4 w-4" />
+              <BookOpen className="h-4 w-4" />
             </button>
+            {tplOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onMouseDown={() => setTplOpen(false)} />
+                <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-lg border border-paper-line bg-paper p-1 shadow-xl dark:border-coal-line dark:bg-coal-panel">
+                  <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint dark:text-coal-soft">
+                    New from template
+                  </div>
+                  {templates.length === 0 && (
+                    <p className="px-2 py-2 text-xs text-ink-faint dark:text-coal-soft">
+                      No templates yet. Open a page → ⋯ → Save as template.
+                    </p>
+                  )}
+                  {templates.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        setTplOpen(false);
+                        void duplicatePage(t.id, '').then((id) => id && setActivePage(id));
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-ink hover:bg-paper-panel dark:text-coal-text dark:hover:bg-coal-line"
+                    >
+                      <span className="text-base leading-none">{t.icon || '📄'}</span>
+                      <span className="truncate">{t.title || 'Untitled'}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
-        )}
+          <button
+            type="button"
+            onClick={() => createPage('')}
+            onMouseUp={blurOnMouse}
+            className="rounded p-1 text-ink-faint hover:bg-paper-line hover:text-ink dark:hover:bg-coal-line dark:hover:text-coal-text"
+            title="New top-level page"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-1.5 pb-4">
@@ -247,9 +252,9 @@ export function Sidebar() {
             </p>
           </div>
         ) : (
-          <>
+          <PresenceContext.Provider value={presence}>
             {roots.map((root) => (
-              <TreeNode key={root.id} page={root} depth={0} pinned={pins} onTogglePin={togglePin} landingId={landingId} onSetLanding={toggleLanding} presence={presence} />
+              <TreeNode key={root.id} page={root} depth={0} pinned={pins} onTogglePin={togglePin} landingId={landingId} onSetLanding={toggleLanding} />
             ))}
             {unfiled.length > 0 && (
               <div className="mt-3 border-t border-paper-line pt-2 dark:border-coal-line">
@@ -297,21 +302,27 @@ export function Sidebar() {
                 <Plus className="h-4 w-4" /> New page
               </button>
             )}
-          </>
+          </PresenceContext.Provider>
         )}
       </div>
     </nav>
   );
 }
 
-function TreeNode({
+const PresenceContext = createContext<Map<string, PresenceRecord[]>>(new Map());
+const NO_ONE: PresenceRecord[] = [];
+function RowPresence({ pageId }: { pageId: string }) {
+  const people = useContext(PresenceContext).get(pageId) ?? NO_ONE;
+  return <PagePresence people={people} onJump={jumpToPresence} />;
+}
+
+const TreeNode = memo(function TreeNodeRow({
   page,
   depth,
   pinned,
   onTogglePin,
   landingId,
   onSetLanding,
-  presence,
 }: {
   page: Page;
   depth: number;
@@ -319,10 +330,9 @@ function TreeNode({
   onTogglePin: (id: string) => void;
   landingId: string | null;
   onSetLanding: (id: string) => void;
-  presence: Map<string, PresenceRecord[]>;
 }) {
-  const pages = useData((s) => s.pages);
-  const activePageId = useData((s) => s.activePageId);
+  const children = useData(useShallow((s) => selectChildren(s.pages, page.id)));
+  const isActive = useData((s) => s.activePageId === page.id);
   const setActivePage = useData((s) => s.setActivePage);
   const createPage = useData((s) => s.createPage);
   const trashPage = useData((s) => s.trashPage);
@@ -331,9 +341,7 @@ function TreeNode({
   const [expanded, setExpanded] = useState(depth < 2);
   const [dragOver, setDragOver] = useState(false);
 
-  const children = selectChildren(pages, page.id);
   const hasChildren = children.length > 0;
-  const isActive = activePageId === page.id;
 
   return (
     <div>
@@ -353,7 +361,7 @@ function TreeNode({
           setDragOver(false);
           const draggedId = e.dataTransfer.getData('text/page-id');
           if (draggedId && draggedId !== page.id) {
-            const order = selectChildren(pages, page.id).length;
+            const order = children.length;
             movePage(draggedId, page.id, order);
             setExpanded(true);
           }
@@ -390,7 +398,7 @@ function TreeNode({
         <span className="shrink-0 text-sm leading-none">{pageIconNode(page.icon, <FileText className="h-3.5 w-3.5" />)}</span>
         <span className="min-w-0 flex-1 truncate">{displayTitle(page.title)}</span>
 
-        <PagePresence people={presence.get(page.id) ?? []} onJump={jumpToPresence} />
+        <RowPresence pageId={page.id} />
 
         <button
           type="button"
@@ -448,13 +456,13 @@ function TreeNode({
       {expanded && hasChildren && (
         <div>
           {children.map((child) => (
-            <TreeNode key={child.id} page={child} depth={depth + 1} pinned={pinned} onTogglePin={onTogglePin} landingId={landingId} onSetLanding={onSetLanding} presence={presence} />
+            <TreeNode key={child.id} page={child} depth={depth + 1} pinned={pinned} onTogglePin={onTogglePin} landingId={landingId} onSetLanding={onSetLanding} />
           ))}
         </div>
       )}
     </div>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // WorkspaceSwitcher, active workspace + a dropdown grouped into Private / Shared

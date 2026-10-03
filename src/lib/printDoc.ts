@@ -1,4 +1,5 @@
 import type { Page, TableData, TableRow, Column, CellValue } from '../types';
+import { formulaFor } from './scope';
 import { cellText } from './tableQuery';
 import { evaluateFormula, formatFormulaValue, formatValue, type FormulaScope } from './formula';
 
@@ -37,11 +38,11 @@ function printScope(columns: Column[], cells: Record<string, CellValue>): Formul
     else if (c.type === 'checkbox') scope[c.name] = v === true ? 1 : 0;
     else if (c.type === 'text' || c.type === 'url' || c.type === 'select' || c.type === 'multiselect' || c.type === 'place') scope[c.name] = cellText(v, c);
   }
-  const formulaCols = columns.filter((c) => c.type === 'formula' && c.formula);
+  const formulaCols = columns.filter((c) => c.type === 'formula' && formulaFor(c, cells));
   for (let pass = 0; pass < formulaCols.length; pass++) {
     let changed = false;
     for (const c of formulaCols) {
-      const v = evaluateFormula(c.formula as string, scope).value;
+      const v = evaluateFormula(formulaFor(c, cells), scope).value;
       if (scope[c.name] !== v) {
         scope[c.name] = v;
         changed = true;
@@ -68,7 +69,7 @@ function renderTable(table: TableData, rows: TableRow[]): string {
         .map((c) => {
           let text: string;
           if (c.type === 'formula') {
-            const r = evaluateFormula(c.formula ?? '', scope);
+            const r = evaluateFormula(formulaFor(c, row.cells), scope);
             text = r.ok ? formatFormulaValue(r.value, c.numberFormat) : '';
           } else if ((c.type === 'number' || c.type === 'rollup') && c.numberFormat && c.numberFormat !== 'plain') {
             const raw = row.cells[c.id];

@@ -23,6 +23,20 @@ interface MirrorEditorProps {
   onChange: (json: object) => void;
 }
 
+const MAX_MIRROR_DEPTH = 3;
+
+function markShownAbove(content: object, chain: string[]): object {
+  const walk = (n: unknown): unknown => {
+    if (!n || typeof n !== 'object') return n;
+    const node = n as { type?: string; attrs?: Record<string, unknown>; content?: unknown[] };
+    const next: Record<string, unknown> = { ...node };
+    if (node.type === 'syncedBlock') next.attrs = { ...(node.attrs ?? {}), shownAbove: chain };
+    if (Array.isArray(node.content)) next.content = node.content.map(walk);
+    return next;
+  };
+  return walk(content) as object;
+}
+
 function SyncedView({ node, updateAttributes, editor }: NodeViewProps) {
   const sourceId = (node.attrs.sourceId as string) || '';
   const editable = editor.isEditable;
@@ -35,6 +49,8 @@ function SyncedView({ node, updateAttributes, editor }: NodeViewProps) {
 
   const source = sourceId ? pages[sourceId] : null;
   const currentPageId = useData.getState().activePageId;
+  const shownAbove = (node.attrs.shownAbove as string[] | null) ?? (currentPageId ? [currentPageId] : []);
+  const repeats = !!sourceId && (shownAbove.includes(sourceId) || shownAbove.length > MAX_MIRROR_DEPTH);
 
   const [Mirror, setMirror] = useState<ComponentType<MirrorEditorProps> | null>(null);
   const [content, setContent] = useState<object | null>(null);
@@ -161,9 +177,16 @@ function SyncedView({ node, updateAttributes, editor }: NodeViewProps) {
             <p className="flex items-center gap-1.5 text-sm text-ink-faint dark:text-coal-soft">
               <Lock className="h-3.5 w-3.5" /> Unlock the vault to see this.
             </p>
+          ) : repeats ? (
+            <p className="text-sm text-ink-faint dark:text-coal-soft">
+              This page is already shown above, so it is not repeated here.{' '}
+              <button type="button" onClick={() => setActivePage(sourceId)} className="font-medium text-clay hover:underline">
+                Open it
+              </button>
+            </p>
           ) : Mirror && content ? (
             <div className="synced-mirror text-sm">
-              <Mirror content={content} editable={false} onChange={() => {}} />
+              <Mirror content={markShownAbove(content, [...shownAbove, sourceId])} editable={false} onChange={() => {}} />
             </div>
           ) : (
             <p className="text-sm text-ink-faint dark:text-coal-soft">Loading…</p>
@@ -181,7 +204,10 @@ export const SyncedBlock = Node.create({
   selectable: true,
 
   addAttributes() {
-    return { sourceId: { default: '' } };
+    return {
+      sourceId: { default: '' },
+      shownAbove: { default: null, rendered: false, parseHTML: () => null },
+    };
   },
 
   parseHTML() {
