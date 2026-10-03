@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, FileText, CornerDownLeft, Plus, Table, Home, Settings, Palette, Moon, Lock, FilePlus, Zap, Paperclip } from 'lucide-react';
-import { useData, selectTopLevel } from '../store/useData';
+import { useData } from '../store/useData';
 import { useWorkspace } from '../store/useWorkspace';
 import { useVault } from '../store/useVault';
 import { useWorkspaceKeys } from '../store/useWorkspaceKeys';
@@ -105,7 +105,7 @@ export function CommandPalette({ open, onClose, onOpenSettings, onOpenThemes, on
       label: 'New page',
       icon: FilePlus,
       keywords: ['new page', 'create page', 'add page'],
-      run: () => void createPage(selectTopLevel(pages)[0]?.id ?? '').then((id) => id && setActivePage(id)),
+      run: () => void createPage('').then((id) => id && setActivePage(id)),
     },
     { label: 'New workspace', icon: Plus, keywords: ['new workspace', 'space', 'team'], run: () => void createWorkspace('Untitled workspace') },
     onOpenSettings && { label: 'Open settings', icon: Settings, keywords: ['settings', 'members', 'invite', 'backup', 'export', 'import', 'notion'], run: onOpenSettings },
@@ -140,12 +140,10 @@ export function CommandPalette({ open, onClose, onOpenSettings, onOpenThemes, on
 
   if (!open) return null;
 
-  const roots = selectTopLevel(pages);
 
   const runCreate = async () => {
-    const parent = roots[0]?.id ?? '';
     const title = query.trim();
-    const id = await createPage(parent);
+    const id = await createPage('');
     if (id) {
       if (title) renamePage(id, title);
       setActivePage(id);

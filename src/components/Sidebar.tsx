@@ -191,58 +191,56 @@ export function Sidebar() {
         <span className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint dark:text-coal-soft">
           Pages
         </span>
-        {roots[0] && (
-          <div className="flex items-center gap-0.5">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setTplOpen((o) => !o)}
-                className="rounded p-1 text-ink-faint hover:bg-paper-line hover:text-ink dark:hover:bg-coal-line dark:hover:text-coal-text"
-                title="New from template"
-              >
-                <BookOpen className="h-4 w-4" />
-              </button>
-              {tplOpen && (
-                <>
-                  <div className="fixed inset-0 z-20" onMouseDown={() => setTplOpen(false)} />
-                  <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-lg border border-paper-line bg-paper p-1 shadow-xl dark:border-coal-line dark:bg-coal-panel">
-                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint dark:text-coal-soft">
-                      New from template
-                    </div>
-                    {templates.length === 0 && (
-                      <p className="px-2 py-2 text-xs text-ink-faint dark:text-coal-soft">
-                        No templates yet. Open a page → ⋯ → Save as template.
-                      </p>
-                    )}
-                    {templates.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => {
-                          setTplOpen(false);
-                          void duplicatePage(t.id, roots[0].id).then((id) => id && setActivePage(id));
-                        }}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-ink hover:bg-paper-panel dark:text-coal-text dark:hover:bg-coal-line"
-                      >
-                        <span className="text-base leading-none">{t.icon || '📄'}</span>
-                        <span className="truncate">{t.title || 'Untitled'}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+        <div className="flex items-center gap-0.5">
+          <div className="relative">
             <button
               type="button"
-              onClick={() => createPage(roots[0].id)}
-              onMouseUp={blurOnMouse}
+              onClick={() => setTplOpen((o) => !o)}
               className="rounded p-1 text-ink-faint hover:bg-paper-line hover:text-ink dark:hover:bg-coal-line dark:hover:text-coal-text"
-              title="New top-level page"
+              title="New from template"
             >
-              <Plus className="h-4 w-4" />
+              <BookOpen className="h-4 w-4" />
             </button>
+            {tplOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onMouseDown={() => setTplOpen(false)} />
+                <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-lg border border-paper-line bg-paper p-1 shadow-xl dark:border-coal-line dark:bg-coal-panel">
+                  <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint dark:text-coal-soft">
+                    New from template
+                  </div>
+                  {templates.length === 0 && (
+                    <p className="px-2 py-2 text-xs text-ink-faint dark:text-coal-soft">
+                      No templates yet. Open a page → ⋯ → Save as template.
+                    </p>
+                  )}
+                  {templates.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        setTplOpen(false);
+                        void duplicatePage(t.id, '').then((id) => id && setActivePage(id));
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-ink hover:bg-paper-panel dark:text-coal-text dark:hover:bg-coal-line"
+                    >
+                      <span className="text-base leading-none">{t.icon || '📄'}</span>
+                      <span className="truncate">{t.title || 'Untitled'}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
-        )}
+          <button
+            type="button"
+            onClick={() => createPage('')}
+            onMouseUp={blurOnMouse}
+            className="rounded p-1 text-ink-faint hover:bg-paper-line hover:text-ink dark:hover:bg-coal-line dark:hover:text-coal-text"
+            title="New top-level page"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-1.5 pb-4">
