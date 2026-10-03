@@ -5601,7 +5601,7 @@ test('every named preset opens as its own widget, and plain tables stay tables',
     eq(widgetFor({ columns: buildTablePreset(plain as never).columns }), null, `a ${plain} someone inserted as a table must stay a table`);
   }
   eq(widgetFor({ columns: buildTablePreset('packing').columns, formKey: 'x' }), null, 'form tables are plumbing, not widgets');
-  ok(WIDGET_SPECS.every((s) => !/—/.test(s.label + s.noun)), 'no em-dashes in widget copy');
+  ok(WIDGET_SPECS.every((s) => !/\u2014/.test(s.label + s.noun)), 'no em-dashes in widget copy');
 });
 
 test('a widget does not show a computed value until its inputs are filled', () => {

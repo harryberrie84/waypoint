@@ -25,7 +25,6 @@ routerAdd(
     var info = $apis.requestInfo(c);
     var data = info.data || {};
     var saved = null;
-    try {
     $app.dao().runInTransaction(function (txDao) {
       txDao
         .db()
@@ -49,10 +48,6 @@ routerAdd(
       form.submit();
       saved = record;
     });
-    } catch (err) {
-      console.log("[save] " + err + " " + (err && err.stack));
-      throw err;
-    }
     return c.json(200, saved);
   },
 );
