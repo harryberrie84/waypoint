@@ -13,7 +13,7 @@ const h = (level: number, text: string): DocNode => ({ type: 'heading', attrs: {
 const check = (text: string): DocNode => ({
   type: 'taskItem',
   attrs: { checked: false },
-  content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+  content: [p(text)],
 });
 const checklist = (items: string[]): DocNode => ({ type: 'taskList', content: items.map(check) });
 const bullets = (items: string[]): DocNode => ({
