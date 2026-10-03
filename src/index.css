@@ -472,8 +472,13 @@ input[type='number'] {
     align-items: stretch;
     gap: 0.75rem;
   }
-  .tiptap .col-row .tiptap-column {
+  .tiptap .col-row > .col-cell {
     flex: var(--col-grow, 1) 1 0;
+    min-width: 0;
+    display: flex;
+  }
+  .tiptap .col-row > .col-cell > .tiptap-column {
+    flex: 1 1 auto;
   }
 }
 
