@@ -57,7 +57,7 @@ function copyHooks(from, to, { cronRoutes, onlyHooks }) {
   }
 }
 
-export async function startPocketBase({ publicDir, cronRoutes = true, onlyHooks, dir: reuseDir, port: fixedPort } = {}) {
+export async function startPocketBase({ publicDir, cronRoutes = true, onlyHooks, dir: reuseDir, port: fixedPort, mail = true } = {}) {
   const bin = await ensurePocketBase();
   const dir = reuseDir || mkdtempSync(join(tmpdir(), 'waypoint-test-'));
   if (!reuseDir) {
@@ -92,13 +92,16 @@ export async function startPocketBase({ publicDir, cronRoutes = true, onlyHooks,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ identity: ADMIN.email, password: ADMIN.password }),
   })).json();
-  const smtp = await startSmtpSink();
+  // mail: false is an install nobody has set SMTP up on, which is every fresh one.
+  const smtp = mail ? await startSmtpSink() : null;
   await fetch(url + '/api/settings', {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', Authorization: admin.token },
     body: JSON.stringify({
       meta: { appName: 'Waypoint', appUrl: url, senderName: 'Waypoint', senderAddress: 'waypoint@example.org' },
-      smtp: { enabled: true, host: '127.0.0.1', port: smtp.port, tls: false, authMethod: 'PLAIN', username: '', password: '' },
+      smtp: smtp
+        ? { enabled: true, host: '127.0.0.1', port: smtp.port, tls: false, authMethod: 'PLAIN', username: '', password: '' }
+        : { enabled: false },
     }),
   });
   const stop = async ({ keep = false } = {}) => {
@@ -106,13 +109,13 @@ export async function startPocketBase({ publicDir, cronRoutes = true, onlyHooks,
       proc.kill('SIGTERM');
       await new Promise((r) => (exited !== null ? r() : proc.on('exit', r)));
     }
-    await smtp.stop();
+    await smtp?.stop();
     if (!keep) rmSync(dir, { recursive: true, force: true });
   };
   const self = { url, dir, port, adminToken: admin.token, smtp, stop, log: () => log };
   self.restart = async () => {
     await stop({ keep: true });
-    const again = await startPocketBase({ publicDir, cronRoutes, onlyHooks, dir, port });
+    const again = await startPocketBase({ publicDir, cronRoutes, onlyHooks, dir, port, mail });
     Object.assign(self, again, { restart: self.restart });
     return self;
   };
