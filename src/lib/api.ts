@@ -795,8 +795,17 @@ export const workspaceInvitesApi = {
   async remove(id: string): Promise<void> {
     await pb.collection('workspace_invites').delete(id);
   },
-  async claim(token: string): Promise<{ workspaces: string[]; reason: string }> {
-    const r = (await pb.send('/api/waypoint/invites/claim', { method: 'POST', body: token ? { token } : {} })) as { workspaces?: string[]; reason?: string };
+  // `routeMissing` means the server predates the claim route (its hooks were not
+  // updated with this bundle), so the caller falls back to claiming directly.
+  async claim(token: string): Promise<{ workspaces: string[]; reason: string; routeMissing?: boolean }> {
+    let r: { workspaces?: string[]; reason?: string };
+    try {
+      r = (await pb.send('/api/waypoint/invites/claim', { method: 'POST', body: token ? { token } : {} })) as typeof r;
+    } catch (err) {
+      const e = err as { status?: number; response?: { message?: string } };
+      if (e.status === 404 && /^Not Found\.?$/.test(e.response?.message ?? '')) return { workspaces: [], reason: '', routeMissing: true };
+      throw err;
+    }
     return { workspaces: Array.isArray(r?.workspaces) ? r.workspaces : [], reason: typeof r?.reason === 'string' ? r.reason : '' };
   },
 };

@@ -11,7 +11,7 @@ import {
   toWorkspaceInvite as toInviteRecord,
 } from '../lib/api';
 import type { Workspace, WorkspaceMember, WorkspaceInvite, WorkspaceRole, NumberStyle } from '../types';
-import { roleInWorkspace, classifyWorkspaces } from '../lib/workspace';
+import { roleInWorkspace, classifyWorkspaces, pendingInvitesFor } from '../lib/workspace';
 import { newInviteToken, pendingInviteToken, forgetInviteToken } from '../lib/inviteToken';
 import { beginWrite, endWrite, keepPendingFields } from '../lib/proseSync';
 import { useData } from './useData';
@@ -142,6 +142,32 @@ async function buildRoster(members: WorkspaceMember[], activeId: string | null, 
     if (m.workspace === activeId && !seen.has(m.user)) seen.set(m.user, { id: m.user, name: m.userName, email: '' });
   }
   return [...seen.values()];
+}
+
+// Claiming without the server's claim route: only an older server lacks it, and
+// there the membership rules still let an invitee seat themselves.
+async function claimDirectly(userId: string, userName: string, email: string): Promise<string[]> {
+  let invites: WorkspaceInvite[] = [];
+  try {
+    invites = await workspaceInvitesApi.list();
+  } catch {
+    return [];
+  }
+  const targets: string[] = [];
+  for (const inv of pendingInvitesFor(email, invites)) {
+    try {
+      await workspaceMembersApi.create(inv.workspace, userId, userName, inv.role);
+    } catch (err) {
+      console.error('[workspace] claim failed for invite ' + inv.id, err);
+    }
+    if (!targets.includes(inv.workspace)) targets.push(inv.workspace);
+    try {
+      await workspaceInvitesApi.remove(inv.id);
+    } catch (err) {
+      console.error('[workspace] could not clear a claimed invite', err);
+    }
+  }
+  return targets;
 }
 
 function pickActive(workspaces: Workspace[], members: WorkspaceMember[], userId: string): string {
@@ -505,7 +531,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     if (!u.id || !u.email) return [];
     const token = pendingInviteToken();
     try {
-      const { workspaces, reason } = await workspaceInvitesApi.claim(token);
+      const { workspaces, reason, routeMissing } = await workspaceInvitesApi.claim(token);
+      if (routeMissing) return await claimDirectly(u.id, u.name, u.email);
       if (token) forgetInviteToken();
       if (reason === 'other-email') toast('That invite was sent to a different email address. Sign in with that address to join.', 'error');
       else if (reason === 'expired') toast('That invite has expired. Ask for a new one.', 'error');
