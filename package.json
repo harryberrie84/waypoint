@@ -1,7 +1,7 @@
 {
   "name": "waypoint",
   "description": "Self-hosted, end-to-end-encrypted workspace: docs, databases, maps, and real-time collaboration on one PocketBase binary.",
-  "version": "0.208.0",
+  "version": "0.208.1",
   "license": "AGPL-3.0-only",
   "repository": "github:harryberrie84/waypoint",
   "homepage": "https://github.com/harryberrie84/waypoint",

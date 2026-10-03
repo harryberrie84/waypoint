@@ -14,6 +14,43 @@
 
 const pending = new Map<string, Map<string, number>>(); // recordId -> field -> seq
 
+// When each field was last written locally (this machine's clock, compared only
+// against another reading of the same clock, so no cross-machine skew is involved).
+//
+// `pending` alone covers the window while a save is in flight, which is enough for a
+// realtime echo: the echo IS the save, so it lands inside or just after the window.
+// It is not enough for `hydrate()`, whose list fetches take SECONDS on a big
+// workspace: a hydrate that set off before an import started lands after every one of
+// the import's writes has settled and the guard has closed, so it reverts the lot to a
+// snapshot taken before the import existed. That is how a board import put every card
+// under "No Stage" (the merged select options were rolled back while the rows kept the
+// new option ids) and how "New board" appeared to do nothing (`pages.kanban` snapped
+// back to the table it replaced). So also remember WHEN, and let a reconcile keep any
+// field written after that reconcile's own read began.
+const lastWrite = new Map<string, Map<string, number>>(); // recordId -> field -> Date.now()
+
+// Bounded: a long session touches a lot of records, and this map would otherwise
+// only grow. Anything older than the longest plausible fetch is useless to
+// keepFieldsWrittenSince, so drop it once the map gets big.
+const STAMP_TTL_MS = 120_000;
+const STAMP_MAX_RECORDS = 500;
+
+function stamp(id: string, field: string): void {
+  let m = lastWrite.get(id);
+  if (!m) {
+    m = new Map();
+    lastWrite.set(id, m);
+  }
+  m.set(field, Date.now());
+  if (lastWrite.size <= STAMP_MAX_RECORDS) return;
+  const cutoff = Date.now() - STAMP_TTL_MS;
+  for (const [rid, fields] of lastWrite) {
+    let newest = 0;
+    for (const t of fields.values()) if (t > newest) newest = t;
+    if (newest < cutoff) lastWrite.delete(rid);
+  }
+}
+
 // Call when a write to `field` of `id` is queued; returns a seq the caller hands
 // back to endWrite once that exact write settles.
 export function beginWrite(id: string, field: string): number {
@@ -24,11 +61,13 @@ export function beginWrite(id: string, field: string): number {
   }
   const seq = (m.get(field) ?? 0) + 1;
   m.set(field, seq);
+  stamp(id, field);
   return seq;
 }
 
 // Release the guard only if no newer keystroke queued a write in the meantime.
 export function endWrite(id: string, field: string, seq: number): void {
+  stamp(id, field); // the value is only on the server as of NOW, not as of beginWrite
   const m = pending.get(id);
   if (!m) return;
   if (m.get(field) === seq) {
@@ -43,6 +82,15 @@ export function isWriting(id: string, field: string): boolean {
 
 export function resetWrites(): void {
   pending.clear();
+  lastWrite.clear();
+}
+
+/** True if `field` of `id` was written locally at or after `since` (or is still in
+ *  flight). `since` must come from the same Date.now() clock. */
+export function writtenSince(id: string, field: string, since: number): boolean {
+  if (isWriting(id, field)) return true;
+  const at = lastWrite.get(id)?.get(field);
+  return at !== undefined && at >= since;
 }
 
 // For a realtime echo: keep the local value of any listed field that currently has
@@ -59,6 +107,23 @@ export function keepPendingFields<T extends { id: string }>(
   if (!m) return incoming;
   for (const f of fields) {
     if (m.has(f)) incoming[f] = local[f];
+  }
+  return incoming;
+}
+
+// For `hydrate()`, which re-reads the whole workspace and REPLACES the store with it.
+// Same idea as keepPendingFields, but the test is "written locally since this read
+// began" rather than "still in flight", because the read outlives the flight. `since`
+// is a Date.now() taken before the fetches went out.
+export function keepFieldsWrittenSince<T extends { id: string }>(
+  local: T | undefined,
+  incoming: T,
+  fields: readonly (keyof T & string)[],
+  since: number,
+): T {
+  if (!local) return incoming;
+  for (const f of fields) {
+    if (writtenSince(incoming.id, f, since)) incoming[f] = local[f];
   }
   return incoming;
 }

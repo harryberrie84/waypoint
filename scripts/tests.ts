@@ -37,7 +37,7 @@ import { compactCount } from '../src/lib/collabCompact.ts';
 import { readOpenRegistration } from '../src/lib/serverConfig.ts';
 import { modKey, undoHint, searchHint, isSearchShortcut, isLinux } from '../src/lib/platform.ts';
 import { defaultTiers, buildTierRows, tierForRating, ratingForInsert } from '../src/lib/tierList.ts';
-import { beginWrite, endWrite, isWriting, isStaleRecord, keepPendingFields, resetWrites } from '../src/lib/proseSync.ts';
+import { beginWrite, endWrite, isWriting, writtenSince, isStaleRecord, keepPendingFields, keepFieldsWrittenSince, resetWrites } from '../src/lib/proseSync.ts';
 import { keyTrustStatus } from '../src/lib/keyTrust.ts';
 import { widgetFor, formulaReady, weightedPick, nextActive, groupRows as widgetGroups, daysFrom, relativeDays, dueTone, nightsBetween, WIDGET_SPECS, PRESET_TABLE_NAMES } from '../src/lib/tableWidgets.ts';
 import { buildSetlistHtml, buildQuizHtml } from '../src/lib/widgetExport.ts';
@@ -4910,6 +4910,51 @@ test('proseSync: no local record means nothing to hold (fresh load)', () => {
   const merged = keepPendingFields(undefined, echo, ['cells']);
   eq(merged.cells.c1, 'server', 'with no local value there is nothing to preserve');
   resetWrites();
+});
+
+// The hydrate half of the same guard. hydrate() re-reads the whole workspace and
+// REPLACES the store with it, and on a big workspace those paged list fetches take
+// seconds, which is longer than a board import takes end to end. So every write the
+// import made can have settled (guard opened AND closed) before the refetch that set
+// off before it lands. keepPendingFields sees nothing pending and hands back the
+// pre-import snapshot. That is the "New board did nothing" and "every card is in
+// No Stage" report: the board's kanban binding and the table's merged select options
+// were rolled back under rows that already carried the new ids.
+test('proseSync: hydrate keeps a field written after its own read began', () => {
+  resetWrites();
+  const readStartedAt = Date.now();
+  // The import: write, settle. Both happen after the refetch set off.
+  const seq = beginWrite('t1', 'columns');
+  endWrite('t1', 'columns', seq);
+  ok(!isWriting('t1', 'columns'), 'the write has fully settled, so nothing is pending');
+  ok(writtenSince('t1', 'columns', readStartedAt), 'but it was written after the read began');
+
+  const local = { id: 't1', name: 'Board', columns: ['merged'] };
+  const stale = { id: 't1', name: 'Board', columns: ['pre-import'] };
+  const merged = keepFieldsWrittenSince(local, stale, ['name', 'columns'], readStartedAt);
+  eq(merged.columns[0], 'merged', 'the imported columns survive the refetch');
+  eq(merged.name, 'Board', 'a field nobody touched still takes the server value');
+  resetWrites();
+});
+
+test('proseSync: hydrate accepts the server value for a field written before its read', () => {
+  resetWrites();
+  const seq = beginWrite('t2', 'columns');
+  endWrite('t2', 'columns', seq);
+  const readStartedAt = Date.now() + 1; // the refetch set off after that write settled
+  ok(!writtenSince('t2', 'columns', readStartedAt), 'an older write does not hold the field');
+  const merged = keepFieldsWrittenSince({ id: 't2', columns: ['old'] }, { id: 't2', columns: ['server'] }, ['columns'], readStartedAt);
+  eq(merged.columns[0], 'server', 'the server copy wins, which is the whole point of a refetch');
+  resetWrites();
+});
+
+test('proseSync: hydrate holds a field whose write is still in flight', () => {
+  resetWrites();
+  const readStartedAt = Date.now() + 5000; // even a read that set off later
+  beginWrite('p2', 'kanban'); // ...cannot beat a write that has not settled
+  ok(writtenSince('p2', 'kanban', readStartedAt), 'in flight always counts as newer');
+  resetWrites();
+  ok(!writtenSince('p2', 'kanban', 0), 'a reset clears the stamps as well as the flags');
 });
 
 // --- rowNav: arrow keys walk the board/calendar while the row drawer is open ---

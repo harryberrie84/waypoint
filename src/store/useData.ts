@@ -766,7 +766,7 @@ import {
 } from '../lib/turnIntoWorkspace';
 import { useWorkspaceKeys } from './useWorkspaceKeys';
 import { toast, toastWithAction } from './useToast';
-import { beginProseWrite, endProseWrite, reconcileProseEcho, resetProseWrites, beginWrite, endWrite, isWriting, isStaleRecord, keepPendingFields } from '../lib/proseSync';
+import { beginProseWrite, endProseWrite, reconcileProseEcho, resetProseWrites, beginWrite, endWrite, isWriting, writtenSince, isStaleRecord, keepPendingFields, keepFieldsWrittenSince } from '../lib/proseSync';
 import { loadLastPage, loadLanding } from '../lib/landing';
 import { fetchRates, setRates, ratesAreStale } from '../lib/fx';
 
@@ -1482,6 +1482,12 @@ export const useData = create<DataState>((set, get) => ({
     let pages: Page[];
     let tables: TableData[];
     let rows: TableRow[];
+    // Taken BEFORE the fetches go out: everything written locally from here on is
+    // newer than anything these lists can contain, however long they take to come
+    // back. On a big workspace that is a dozen paged requests and several seconds,
+    // which is longer than a whole board import takes, so this is the difference
+    // between an import surviving a concurrent refetch and being rolled back by it.
+    const readStartedAt = Date.now();
     try {
       [pages, tables, rows] = await Promise.all([
         pagesApi.list(),
@@ -1527,17 +1533,17 @@ export const useData = create<DataState>((set, get) => ({
         }
         pageMap[p.id] = keepNonEmptyLists(
           cur.pages[p.id],
-          keepPendingFields(cur.pages[p.id], mapped, ['content', 'title', 'map', 'mindmap', 'flow', 'kanban', 'tierlist', 'rates', 'sheet', 'cards', 'rota', 'bracket', 'defaultTab', 'photos', 'files', 'cover', 'icon']),
+          keepFieldsWrittenSince(cur.pages[p.id], mapped, ['content', 'title', 'map', 'mindmap', 'flow', 'kanban', 'tierlist', 'rates', 'sheet', 'cards', 'rota', 'bracket', 'defaultTab', 'photos', 'files', 'cover', 'icon'], readStartedAt),
         );
       }
       const tableMap: Record<string, TableData> = {};
-      for (const t of tables) tableMap[t.id] = keepPendingFields(cur.tables[t.id], withLocalFormKey(t), ['name', 'columns', 'views', 'automations']);
+      for (const t of tables) tableMap[t.id] = keepFieldsWrittenSince(cur.tables[t.id], withLocalFormKey(t), ['name', 'columns', 'views', 'automations'], readStartedAt);
       const rowMap: Record<string, TableRow> = {};
       for (const r of rows) {
-        const mapped = keepPendingFields(cur.rows[r.id], hydrateRow(r), ['content']);
+        const mapped = keepFieldsWrittenSince(cur.rows[r.id], hydrateRow(r), ['content'], readStartedAt);
         // Plaintext cells being typed: hold them too (encrypted cells carry a blob).
         let held =
-          cur.rows[r.id] && !mapped.cellsEnc && isWriting(r.id, 'cells')
+          cur.rows[r.id] && !mapped.cellsEnc && writtenSince(r.id, 'cells', readStartedAt)
             ? { ...mapped, cells: cur.rows[r.id].cells }
             : mapped;
         // Row body, same rule as the realtime echo below and gated the SAME way. Keep
@@ -1551,7 +1557,7 @@ export const useData = create<DataState>((set, get) => ({
           held.contentEnc &&
           local?.content &&
           !local.contentEnc &&
-          (isWriting(r.id, 'content') || useWorkspaceKeys.getState().sameRowBodyEnvelope(r.id, held.contentEnc))
+          (writtenSince(r.id, 'content', readStartedAt) || useWorkspaceKeys.getState().sameRowBodyEnvelope(r.id, held.contentEnc))
         ) {
           held = { ...held, content: local.content, contentEnc: undefined };
         }
@@ -2948,7 +2954,19 @@ export const useData = create<DataState>((set, get) => ({
           if (!tbl) return s;
           return { tables: { ...s.tables, [tableId]: { ...tbl, columns: plan.columns } } };
         });
-        await tablesApi.update(tableId, { columns: plan.columns });
+        // Guarded like every other columns write (persistColumns' rule: none may
+        // bypass it). This one is not debounced, because the cell writes below
+        // resolve against these options and must not race them, but it still has to
+        // mark 'columns' pending: a realtime echo or a hydrate that set off before
+        // this landed would otherwise roll the merged select options back, and the
+        // rows already hold the new option ids, so every card falls into the
+        // "No <stage>" bucket on a board that looks empty of lanes.
+        const cseq = beginWrite(tableId, 'columns');
+        try {
+          await tablesApi.update(tableId, { columns: plan.columns });
+        } finally {
+          endWrite(tableId, 'columns', cseq);
+        }
       }
       // Matched cards: setCell handles encryption + automations and coalesces the
       // per-row writes; setRowContent fills the body when the card carried one. A
@@ -4639,7 +4657,13 @@ export const useData = create<DataState>((set, get) => ({
     // One authoritative persist of the resulting columns (drop + adds combined).
     if (columnsChanged) {
       const finalCols = get().tables[tableId]?.columns;
-      if (finalCols) await tablesApi.update(tableId, { columns: finalCols }).catch((e) => console.error('[data] import columns', e));
+      if (finalCols) {
+        const cseq = beginWrite(tableId, 'columns');
+        await tablesApi
+          .update(tableId, { columns: finalCols })
+          .catch((e) => console.error('[data] import columns', e))
+          .finally(() => endWrite(tableId, 'columns', cseq));
+      }
     }
     const records = resolve(newIds);
     let n = 0;
