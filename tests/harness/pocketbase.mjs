@@ -57,7 +57,7 @@ function copyHooks(from, to, { cronRoutes, onlyHooks }) {
   }
 }
 
-export async function startPocketBase({ publicDir, cronRoutes = true, onlyHooks, dir: reuseDir, port: fixedPort, mail = true } = {}) {
+export async function startPocketBase({ publicDir, cronRoutes = true, onlyHooks, dir: reuseDir, port: fixedPort, mail = true, openRegistration = true } = {}) {
   const bin = await ensurePocketBase();
   const dir = reuseDir || mkdtempSync(join(tmpdir(), 'waypoint-test-'));
   if (!reuseDir) {
@@ -69,7 +69,10 @@ export async function startPocketBase({ publicDir, cronRoutes = true, onlyHooks,
   const args = ['serve', `--http=127.0.0.1:${port}`, `--dir=${join(dir, 'data')}`, `--migrationsDir=${join(dir, 'migrations')}`, `--hooksDir=${join(dir, 'hooks')}`];
   if (publicDir) args.push(`--publicDir=${publicDir}`);
   let log = '';
-  const proc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  // Tests sign up many throwaway accounts, so registration is open unless a test
+  // asks for the invite-only install every real one starts as.
+  const env = { ...process.env, WAYPOINT_OPEN_REGISTRATION: openRegistration ? 'true' : '' };
+  const proc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
   proc.stdout.on('data', (d) => (log += d));
   proc.stderr.on('data', (d) => (log += d));
   let exited = null;
@@ -115,7 +118,7 @@ export async function startPocketBase({ publicDir, cronRoutes = true, onlyHooks,
   const self = { url, dir, port, adminToken: admin.token, smtp, stop, log: () => log };
   self.restart = async () => {
     await stop({ keep: true });
-    const again = await startPocketBase({ publicDir, cronRoutes, onlyHooks, dir, port, mail });
+    const again = await startPocketBase({ publicDir, cronRoutes, onlyHooks, dir, port, mail, openRegistration });
     Object.assign(self, again, { restart: self.restart });
     return self;
   };

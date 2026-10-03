@@ -28,6 +28,11 @@ docker compose up -d
 Open `http://localhost:8090` and register. That account is yours; the first sign-in
 seeds a starter workspace so the app is not an empty screen.
 
+That first account is the only one anyone can create unprompted. After it, sign-up
+is invite only, so putting this on a public address does not put a sign-up form on
+a public address. Invite people from Settings, or set
+`WAYPOINT_OPEN_REGISTRATION=true` if you want it open.
+
 There is no schema to import, no database to prepare, and no build step. The
 container builds its own database on first start.
 

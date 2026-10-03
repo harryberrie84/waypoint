@@ -34,6 +34,7 @@ import { collectEvents, collectEventSpans, eventsByDay, collectMoney, tripDaySpa
 import type { TableData, TableRow, Page } from '../src/types.ts';
 import type { ViewConfig } from '../src/lib/tableQuery.ts';
 import { compactCount } from '../src/lib/collabCompact.ts';
+import { readOpenRegistration } from '../src/lib/serverConfig.ts';
 import { modKey, undoHint, searchHint, isSearchShortcut, isLinux } from '../src/lib/platform.ts';
 import { defaultTiers, buildTierRows, tierForRating, ratingForInsert } from '../src/lib/tierList.ts';
 import { beginWrite, endWrite, isWriting, isStaleRecord, keepPendingFields, resetWrites } from '../src/lib/proseSync.ts';
@@ -5724,6 +5725,18 @@ test('looksLikeCode: pasted lines become code only when they read as code', () =
   ok(looksLikeCode('<div>\n  <p>hi</p>\n</div>'), 'markup');
   ok(looksLikeCode('if (x) {\n  y();\n}'), 'braces');
   ok(!looksLikeCode('one line only;'), 'a single line is never a code block');
+});
+
+test('serverConfig: only an explicit false hides the sign-up form', () => {
+  ok(!readOpenRegistration({ openRegistration: false }), 'a closed instance closes the form');
+  ok(readOpenRegistration({ openRegistration: true }), 'an open one offers it');
+  // The upgrade case, and the reason this is not a plain truthiness read: an
+  // install running an older build has no config route, so the fetch fails and
+  // the caller falls back. Registration really is open on that install, so
+  // anything that is not a definite "closed" has to leave the form alone.
+  ok(readOpenRegistration({}), 'a body without the field leaves it open');
+  ok(readOpenRegistration(null), 'so does no body at all');
+  ok(readOpenRegistration('<html>404</html>'), 'and so does a proxy error page returned as 200');
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);

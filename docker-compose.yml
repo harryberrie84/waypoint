@@ -22,6 +22,10 @@ services:
       # leave them out and PocketBase prints a one-time setup link in the logs.
       # ADMIN_EMAIL: you@example.com
       # ADMIN_PASSWORD: change-me-before-first-start
+      #
+      # Sign-up is invite only after the first account. Uncomment to let anyone
+      # who can reach this app register.
+      # WAYPOINT_OPEN_REGISTRATION: "true"
       TZ: UTC
 
 volumes:

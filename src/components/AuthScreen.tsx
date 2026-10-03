@@ -1,11 +1,20 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { rememberInviteToken } from '../lib/inviteToken';
 import { useAuth } from '../store/useAuth';
 import { readInviteFromSearch } from '../lib/workspace';
+import { serverConfig } from '../lib/serverConfig';
 import { MapPin } from 'lucide-react';
 
-// AuthScreen, sign in / sign up / password reset. Open registration per the
-// deployment brief: anyone reaching the app (LAN or tunnel) can self-register.
+// AuthScreen, sign in / sign up / password reset.
+//
+// Sign-up is offered when the instance allows it: an install with no accounts
+// yet, or one whose operator has opened registration. Otherwise this is a
+// sign-in form, and the way in is an invite. Someone arriving on an invite link
+// is always offered the form, because the server holds a pending invite for
+// that address and will accept them.
+//
+// The decision is the server's; this only picks which form to draw. See
+// server/pb_hooks/gate_registration.pb.js.
 
 type Mode = 'login' | 'register' | 'forgot' | 'reset';
 
@@ -33,6 +42,19 @@ export function AuthScreen() {
   const [email, setEmail] = useState(invite?.email ?? '');
   const [password, setPassword] = useState('');
   const [sent, setSent] = useState(false); // reset email requested
+  // Starts true so a closed instance settles to a sign-in form, rather than an
+  // open one flashing the sign-up tab away a moment after it is read.
+  const [signupOffered, setSignupOffered] = useState(true);
+  useEffect(() => {
+    let live = true;
+    void serverConfig().then((cfg) => {
+      if (live) setSignupOffered(cfg.openRegistration);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const canRegister = signupOffered || !!invite;
   const [resetDone, setResetDone] = useState(false); // password changed, back to login
 
   const go = (m: Mode) => {
@@ -103,7 +125,7 @@ export function AuthScreen() {
             </div>
           )}
 
-          {(mode === 'login' || mode === 'register') && (
+          {canRegister && (mode === 'login' || mode === 'register') && (
             <div className="mb-5 flex rounded-lg bg-paper-panel p-1 dark:bg-coal">
               {(['login', 'register'] as const).map((m) => (
                 <button
@@ -217,7 +239,7 @@ export function AuthScreen() {
           )}
         </div>
 
-        {(mode === 'login' || mode === 'register') && (
+        {canRegister && (mode === 'login' || mode === 'register') && (
           <p className="mt-4 text-center text-xs text-ink-faint dark:text-coal-soft">
             {mode === 'login' ? 'New here? ' : 'Already have an account? '}
             <button

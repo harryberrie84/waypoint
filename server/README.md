@@ -16,6 +16,25 @@ Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `docker-compose.yml` before the first
 start and the account is created for you. Leave them out and PocketBase prints a
 one-time setup link in `docker compose logs`.
 
+## Who can register
+
+The first account on a fresh install is always allowed: that is what makes
+"start it, open it, register" work with nothing configured. Every account after
+that needs a pending invite for the same address, so an instance on a public
+address does not carry a public sign-up form.
+
+Invites are sent from inside the app, and they are matched by email, which is
+why the invitee has to register with the exact address the invite went to. The
+sign-up form is hidden when the instance is closed, except for someone arriving
+on an invite link.
+
+To run an open instance instead, set `WAYPOINT_OPEN_REGISTRATION=true`. Refusals
+are logged, so if someone tells you they cannot sign up, the reason is in
+`docker compose logs`.
+
+Nothing here touches the PocketBase admin account, which is separate and is not
+created by registering.
+
 ## Email
 
 Waypoint sends mail in three places, all through the server:
