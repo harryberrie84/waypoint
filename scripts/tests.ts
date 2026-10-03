@@ -2810,6 +2810,15 @@ test('appendCapture appends a new list after non-list content, never mutating in
   eq(doc.content.length, 1, 'original untouched');
 });
 
+test('no starter has an empty text node, which the editor refuses and opens the page blank', () => {
+  const empties = (n: unknown): number => {
+    if (!n || typeof n !== 'object') return 0;
+    const node = n as { type?: string; text?: string; content?: unknown[] };
+    return (node.type === 'text' && !node.text ? 1 : 0) + (node.content ?? []).reduce((a: number, c) => a + empties(c), 0);
+  };
+  for (const s of STARTERS) eq(empties(s.build()), 0, `${s.key} empty text nodes`);
+});
+
 test('starters build valid docs and a blank notebook', () => {
   const blank = STARTERS.find((s) => s.key === 'blank');
   ok(blank, 'blank exists');
