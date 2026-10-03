@@ -22,7 +22,7 @@ export function OfflineBanner() {
     <div role="status" className="fixed inset-x-0 top-0 z-[70] flex items-center justify-center gap-2 bg-amber-500/95 px-3 py-1.5 text-xs font-medium text-white">
       <CloudOff className="h-3.5 w-3.5 shrink-0" />
       <span>
-        You're offline. Your edits stay on this device and are sent when you're back online{pending ? ` (${pending} waiting)` : ''}. Keep this tab open until then.
+        You're offline. Page text is kept on this device. Other edits wait in this tab and go out when you're back{pending ? ` (${pending} waiting)` : ''}; close the tab first and they are lost.
       </span>
     </div>
   );
