@@ -28,6 +28,9 @@ import {
   selectWorkspaceTables,
   selectBreadcrumb,
   selectRowsForTable,
+  pagesToTrash,
+  pagesToRestore,
+  pagesToDelete,
 } from '../lib/pageTree';
 import { selectMyRole, canEdit, canManageSharing } from '../lib/permissions';
 import { planImport, parseDelimited } from '../lib/csv';
@@ -3705,17 +3708,12 @@ export const useData = create<DataState>((set, get) => ({
   trashPage: async (id) => {
     if (viewerOnly(get().pages[id]?.workspace)) return;
     const pages = get().pages;
-    const ids: string[] = [];
-    const collect = (pid: string) => {
-      for (const p of Object.values(pages)) if (p.parent === pid) collect(p.id);
-      ids.push(pid);
-    };
-    collect(id);
+    const ids = pagesToTrash(pages, id);
     const label = pages[id]?.title || 'page';
 
     set((s) => {
       const next = { ...s.pages };
-      for (const rid of ids) if (next[rid]) next[rid] = { ...next[rid], trashed: true };
+      for (const rid of ids) if (next[rid]) next[rid] = { ...next[rid], trashed: true, trashedWith: id };
       let active = s.activePageId;
       if (active && ids.includes(active)) {
         // Pick the next page from the SAME workspace, so trashing doesn't fling
@@ -3741,7 +3739,7 @@ export const useData = create<DataState>((set, get) => ({
 
     markFlowsDirty(); // trashed pages' flows stop firing; don't wait for the echo
     for (const rid of ids) {
-      pagesApi.update(rid, { trashed: true }).catch((err) => {
+      pagesApi.update(rid, { trashed: true, trashedWith: id }).catch((err) => {
         console.error('[data] trashPage failed for', rid, err);
         if (navigator.onLine) void get().hydrate();
       });
@@ -3750,22 +3748,23 @@ export const useData = create<DataState>((set, get) => ({
 
   restorePage: async (id) => {
     const pages = get().pages;
-    const ids: string[] = [];
-    const collect = (pid: string) => {
-      for (const p of Object.values(pages)) if (p.parent === pid) collect(p.id);
-      ids.push(pid);
-    };
-    collect(id);
+    if (viewerOnly(pages[id]?.workspace)) return;
+    const ids = pagesToRestore(pages, id);
+    // Brought back while its parent is still in the trash (or gone): it would
+    // otherwise come back somewhere nobody can see it, so it moves to the top.
+    const parent = pages[id]?.parent ?? '';
+    const strand = !!parent && (!pages[parent] || pages[parent].trashed);
+    const patchFor = (rid: string): Partial<Page> => ({ trashed: false, trashedWith: '', ...(rid === id && strand ? { parent: '' } : {}) });
 
     set((s) => {
       const next = { ...s.pages };
-      for (const rid of ids) if (next[rid]) next[rid] = { ...next[rid], trashed: false };
+      for (const rid of ids) if (next[rid]) next[rid] = { ...next[rid], ...patchFor(rid) };
       return { pages: next, activePageId: id };
     });
 
     markFlowsDirty(); // and start again on restore
     for (const rid of ids) {
-      pagesApi.update(rid, { trashed: false }).catch((err) => {
+      pagesApi.update(rid, patchFor(rid)).catch((err) => {
         console.error('[data] restorePage failed for', rid, err);
         if (navigator.onLine) void get().hydrate();
       });
@@ -3776,12 +3775,7 @@ export const useData = create<DataState>((set, get) => ({
     if (viewerOnly(get().pages[id]?.workspace, opts?.quiet)) return false;
     // Collect descendants client-side and delete deepest-first.
     const pages = get().pages;
-    const toRemove: string[] = [];
-    const collect = (pid: string) => {
-      for (const p of Object.values(pages)) if (p.parent === pid) collect(p.id);
-      toRemove.push(pid);
-    };
-    collect(id);
+    const { remove: toRemove, rehome, home } = pagesToDelete(pages, id);
     const myId = (pb.authStore.record?.id as string) ?? '';
     const ws = useWorkspace.getState();
     const mayDelete = (rid: string) => {
@@ -3801,6 +3795,24 @@ export const useData = create<DataState>((set, get) => ({
       if (!p) continue;
       candidateTables.push(...extractTableIds(p.content));
       if (p.kanban?.tableId) candidateTables.push(p.kanban.tableId);
+    }
+
+    // Pages under it that are not going with it move out first; if that fails
+    // nothing is deleted, so a live page can never go down with a trashed parent.
+    if (rehome.length) {
+      try {
+        await Promise.all(rehome.map((rid) => pagesApi.update(rid, { parent: home })));
+      } catch (err) {
+        console.error('[data] deletePage could not move sub-pages out first', err);
+        if (!opts?.quiet) toast('Could not delete it: some pages inside it are still in use and could not be moved out. Nothing was deleted.', 'error');
+        if (navigator.onLine) void get().hydrate();
+        return false;
+      }
+      set((s) => {
+        const next = { ...s.pages };
+        for (const rid of rehome) if (next[rid]) next[rid] = { ...next[rid], parent: home };
+        return { pages: next };
+      });
     }
 
     // Optimistic local removal.

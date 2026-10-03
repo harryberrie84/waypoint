@@ -43,7 +43,7 @@ import { buildSetlistHtml, buildQuizHtml } from '../src/lib/widgetExport.ts';
 import {
   selectChildren, selectTopLevel, selectTemplates, selectTrashRoots,
   pageWorkspaceId, selectWorkspacePages, selectWorkspaceTables, selectBreadcrumb, selectRowsForTable,
-  selectUnfiledPages,
+  selectUnfiledPages, pagesToTrash, pagesToRestore, pagesToDelete,
 } from '../src/lib/pageTree.ts';
 import { selectMyRole, canEdit as canEditPage, canManageSharing } from '../src/lib/permissions.ts';
 import { serializeSetlist, parseSetlist, SETLIST_TEMPLATE, type SetItem } from '../src/lib/setlistIO.ts';
@@ -3903,6 +3903,31 @@ test('pageTree: selectTrashRoots returns only subtree roots, newest first', () =
     c: mkPage({ id: 'c', trashed: true, updated: '2024-01-01' }),
   };
   eq(selectTrashRoots(pages).map((p) => p.id), ['a', 'c'], 'roots only, newest first');
+});
+
+test('pageTree: trash, restore and delete only take what went to the trash together', () => {
+  const pages: Record<string, Page> = {
+    top: mkPage({ id: 'top', parent: '' }),
+    p: mkPage({ id: 'p', parent: 'top', trashed: true, trashedWith: 'p' }),
+    gone: mkPage({ id: 'gone', parent: 'p', trashed: true, trashedWith: 'p' }),
+    alone: mkPage({ id: 'alone', parent: 'p', trashed: true, trashedWith: 'alone' }),
+    aloneKid: mkPage({ id: 'aloneKid', parent: 'alone', trashed: true, trashedWith: 'alone' }),
+    live: mkPage({ id: 'live', parent: 'p' }),
+    liveKid: mkPage({ id: 'liveKid', parent: 'live' }),
+    legacy: mkPage({ id: 'legacy', parent: 'gone', trashed: true }),
+  };
+  const del = pagesToDelete(pages, 'p');
+  eq(new Set(del.remove), new Set(['p', 'gone', 'legacy']), 'deleting for good takes only what was trashed with it');
+  eq(new Set(del.rehome), new Set(['alone', 'live']), 'a live sub-page and one trashed on its own move out');
+  eq(del.home, 'top', 'they move to the nearest page outside the trash');
+  ok(del.remove.indexOf('legacy') < del.remove.indexOf('gone') && del.remove.indexOf('gone') < del.remove.indexOf('p'), 'deepest first');
+  eq(new Set(pagesToRestore(pages, 'p')), new Set(['p', 'gone', 'legacy']), 'restoring leaves the one trashed on its own in the trash');
+  eq(selectTrashRoots(pages).map((p) => p.id).sort(), ['alone', 'p'], 'a page trashed on its own keeps its own trash entry');
+  eq(new Set(pagesToTrash({ ...pages, p: mkPage({ id: 'p', parent: 'top' }) }, 'p')), new Set(['p', 'live', 'liveKid']), 'trashing skips sub-pages already in the trash');
+  const live = pagesToDelete({ ...pages, p: mkPage({ id: 'p', parent: 'top' }) }, 'p');
+  eq(live.rehome, [], 'a page outside the trash takes its whole tree');
+  eq(live.remove.length, 7, 'the whole tree');
+  eq(pagesToDelete({ a: mkPage({ id: 'a', parent: 'b', trashed: true, trashedWith: 'a' }), b: mkPage({ id: 'b', parent: 'a', trashed: true, trashedWith: 'b' }) }, 'a').home, '', 'a parent loop does not hang');
 });
 
 test('pageTree: selectTemplates sorts by title and skips trashed', () => {

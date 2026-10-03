@@ -39,6 +39,7 @@ function toPage(r: RecordModel): Page {
     owner: r.owner ?? '',
     workspace: typeof r.workspace === 'string' && r.workspace ? r.workspace : undefined,
     trashed: r.trashed === true,
+    trashedWith: typeof r.trashedWith === 'string' && r.trashedWith ? r.trashedWith : undefined,
     visibility: r.visibility === 'private' ? 'private' : 'workspace',
     publicToken: typeof r.publicToken === 'string' && r.publicToken ? r.publicToken : undefined,
     editors: Array.isArray(r.editors) ? (r.editors as string[]) : [],

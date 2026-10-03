@@ -39,13 +39,83 @@ export function selectTemplates(pages: Record<string, Page>): Page[] {
 }
 
 /**
- * Trashed pages that are the *root* of a trashed subtree (their parent is not
- * itself trashed). Restoring one of these brings its whole subtree back.
+ * Trashed pages that are the *root* of a trashed subtree: their parent is not
+ * trashed, or they went to the trash on their own before their parent did.
+ * Restoring one of these brings back what was trashed with it.
  */
 export function selectTrashRoots(pages: Record<string, Page>): Page[] {
   return Object.values(pages)
-    .filter((p) => p.trashed && !(p.parent && pages[p.parent]?.trashed))
+    .filter((p) => p.trashed && (!(p.parent && pages[p.parent]?.trashed) || p.trashedWith === p.id))
     .sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
+}
+
+function childrenOf(pages: Record<string, Page>, id: string): Page[] {
+  return Object.values(pages).filter((p) => p.parent === id && p.id !== id);
+}
+
+// Pages without a trashedWith were trashed before it existed; they count as part
+// of whichever trashed ancestor is being acted on, as they always did.
+const wentWith = (p: Page, root: string) => p.trashed && (!p.trashedWith || p.trashedWith === root);
+
+/** The page and every sub-page still out of the trash, deepest first. */
+export function pagesToTrash(pages: Record<string, Page>, id: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const walk = (pid: string) => {
+    if (seen.has(pid)) return;
+    seen.add(pid);
+    for (const c of childrenOf(pages, pid)) if (!c.trashed) walk(c.id);
+    out.push(pid);
+  };
+  walk(id);
+  return out;
+}
+
+/** The page and the sub-pages that went to the trash with it. Ones trashed on
+ *  their own earlier stay in the trash as their own entry. */
+export function pagesToRestore(pages: Record<string, Page>, id: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const walk = (pid: string) => {
+    if (seen.has(pid)) return;
+    seen.add(pid);
+    out.push(pid);
+    for (const c of childrenOf(pages, pid)) if (wentWith(c, id)) walk(c.id);
+  };
+  walk(id);
+  return out;
+}
+
+/**
+ * What deleting a trashed page for good removes, deepest first, and which pages
+ * directly under that set must move out of the way first: live sub-pages (made
+ * or restored under it after it was trashed) and sub-pages trashed on their own.
+ * They move to `home`, the nearest ancestor that is not in the trash, or the top
+ * level. A page that is not in the trash takes its whole tree with it.
+ */
+export function pagesToDelete(pages: Record<string, Page>, id: string): { remove: string[]; rehome: string[]; home: string } {
+  const remove: string[] = [];
+  const rehome: string[] = [];
+  const seen = new Set<string>();
+  const whole = !pages[id]?.trashed;
+  const walk = (pid: string) => {
+    if (seen.has(pid)) return;
+    seen.add(pid);
+    for (const c of childrenOf(pages, pid)) {
+      if (whole || wentWith(c, id)) walk(c.id);
+      else rehome.push(c.id);
+    }
+    remove.push(pid);
+  };
+  walk(id);
+  let home = pages[id]?.parent ?? '';
+  const climbed = new Set<string>();
+  while (home && pages[home]?.trashed && !climbed.has(home)) {
+    climbed.add(home);
+    home = pages[home].parent;
+  }
+  if (home && (!pages[home] || pages[home].trashed || remove.includes(home))) home = '';
+  return { remove, rehome, home };
 }
 
 // A page belongs to a workspace via its `workspace` field; legacy pages with an

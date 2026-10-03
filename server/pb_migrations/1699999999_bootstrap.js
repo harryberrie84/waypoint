@@ -431,6 +431,20 @@ migrate(
                     "presentable": false,
                     "unique": false,
                     "options": {}
+                },
+                {
+                    "system": false,
+                    "id": "0001n4pno3",
+                    "name": "trashedWith",
+                    "type": "text",
+                    "required": false,
+                    "presentable": false,
+                    "unique": false,
+                    "options": {
+                        "min": null,
+                        "max": 20,
+                        "pattern": ""
+                    }
                 }
             ],
             "listRule": "(@request.auth.id != \"\" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id && (visibility != \"private\" || owner = @request.auth.id || editors:each ?= @request.auth.id || viewers:each ?= @request.auth.id)) || (publicToken != \"\" && publicToken = @request.query.token && trashed != true)",
@@ -1759,7 +1773,8 @@ migrate(
         "1700000013_presence_cursor.js",
         "1700000014_missing_fields_and_indexes.js",
         "1700000015_narrow_write_rules.js",
-        "1700000016_stamp_orphan_workspaces.js"
+        "1700000016_stamp_orphan_workspaces.js",
+        "1700000018_trashed_with.js"
     ];
     var stamp = Date.now() * 1000;
     for (var m = 0; m < later.length; m++) {

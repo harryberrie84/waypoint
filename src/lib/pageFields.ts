@@ -31,4 +31,5 @@ export const PAGE_LIST_FIELDS = [
   'files',
   'defaultTab',
   'trashed',
+  'trashedWith',
 ].join(',');

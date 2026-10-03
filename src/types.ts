@@ -49,6 +49,7 @@ export interface Page {
   owner: string; // user id who created it
   workspace?: string; // owning workspace (feature 4; optional → empty resolves to the default ws pre-migration)
   trashed: boolean; // soft-delete flag; trashed pages are hidden from the tree
+  trashedWith?: string; // the page whose trashing put this one in the trash
   visibility: 'workspace' | 'private'; // 'workspace' = all members; 'private' = owner + shares
   editors: string[]; // user ids granted edit when private (multi-relation on the page)
   viewers: string[]; // user ids granted read-only when private

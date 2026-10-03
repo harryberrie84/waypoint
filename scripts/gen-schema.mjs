@@ -92,7 +92,7 @@ const ADD_FIELDS = {
   presence: [text('cursor', 5000), text('focus', 200)],
 };
 
-ADD_FIELDS.pages.push(bool('trashed'));
+ADD_FIELDS.pages.push(bool('trashed'), text('trashedWith', 20));
 ADD_FIELDS.tables.push(json('views'), json('automations'));
 ADD_FIELDS.workspaces = [text('numberStyle', 20)];
 ADD_FIELDS.workspace_invites = [text('tokenHash', 128)];
