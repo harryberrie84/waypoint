@@ -86,7 +86,7 @@ function offlineOnly(what: string): boolean {
   const now = Date.now();
   if (now - lastOfflineNotice > 3000) {
     lastOfflineNotice = now;
-    toast(`You're offline. ${what} can be made once you're back online; edits to existing things are kept and sent then.`, 'error');
+    toast(`You're offline. ${what} can be made once you're back online; other edits wait in this tab until then.`, 'error');
   }
   return true;
 }
@@ -1297,9 +1297,10 @@ const writeFirstAt = new Map<string, number>();
 // The pending fn per key, so a specific write can be run early via flushWrite().
 const writeFns = new Map<string, () => void | Promise<unknown>>();
 
-// Debounced write that also honours a maxWait: it saves `delay` ms after the last
-// call (save-on-pause), but if a continuous burst runs past `maxWait` it flushes
-// anyway, so a fast typist's text syncs every second or so instead of only on stop.
+// Writes made offline wait here, in memory only, and go out on the next `online`.
+// Best effort: closing the tab drops them, and the banner says so. Nothing that
+// creates or deletes is queued (offlineOnly refuses those), and the cell and column
+// saves merge into the server's current copy when they finally run.
 const offlineOutbox = new Map<string, () => void | Promise<unknown>>();
 const outboxListeners = new Set<() => void>();
 
@@ -1357,6 +1358,9 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// Debounced write that also honours a maxWait: it saves `delay` ms after the last
+// call (save-on-pause), but if a continuous burst runs past `maxWait` it flushes
+// anyway, so a fast typist's text syncs every second or so instead of only on stop.
 function debounceWrite(key: string, fn: () => void | Promise<unknown>, delay = 350, maxWait = 0) {
   const existing = writeTimers.get(key);
   if (existing) clearTimeout(existing);
