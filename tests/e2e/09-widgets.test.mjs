@@ -84,7 +84,8 @@ export default async function () {
         await page.keyboard.type('Adapter');
         await page.waitForTimeout(2500);
         await page.keyboard.type(' plug');
-        ok(await fresh.evaluate((el) => el === document.activeElement), 'the field kept focus when the server made the row');
+        const where = await fresh.evaluate((el) => ({ connected: el.isConnected, active: document.activeElement?.tagName + ':' + (document.activeElement?.getAttribute('placeholder') || document.activeElement?.className?.slice?.(0, 40)), value: el.value }));
+        ok(await fresh.evaluate((el) => el === document.activeElement), `the field kept focus when the server made the row (${JSON.stringify(where)})`);
         await page.unroute('**/api/collections/table_rows/records');
         await page.waitForTimeout(2500);
         await page.reload();

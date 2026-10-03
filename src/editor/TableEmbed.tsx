@@ -192,7 +192,12 @@ export const TableEmbed = Node.create({
 
   addNodeView() {
     return ReactNodeViewRenderer(TableEmbedView, {
-      stopEvent: ({ event }) => event.type.startsWith('drag') || event.type === 'drop',
+      stopEvent: ({ event }) => {
+        if (event.type.startsWith('drag') || event.type === 'drop') return true;
+        const target = event.target as HTMLElement | null;
+        if (!target) return false;
+        return ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName) || target.isContentEditable || !!target.closest('input, textarea, select, button, [contenteditable="true"]');
+      },
     });
   },
 });
