@@ -10,6 +10,7 @@ import { pageToMarkdown, safeFileName } from '../lib/backup';
 import { pageToICS } from '../lib/ics';
 import { pageTables } from '../lib/tripViews';
 import { isEmptyDoc } from '../lib/doc';
+import { snapshotNow } from '../lib/versions';
 import { toast } from '../store/useToast';
 import { Editor } from './Editor';
 import { PageMap } from './PageMap';
@@ -152,7 +153,15 @@ export function PageView({ pageId }: { pageId: string }) {
         return; // can't read that snapshot with the current key
       }
     }
-    if (doc && typeof doc === 'object') setRestoreDoc(doc as object);
+    if (!doc || typeof doc !== 'object') return;
+    const current = page.content;
+    const hasText = current != null && (isEnvelope(current) || !isEmptyDoc(current));
+    if (hasText && !(await snapshotNow(page.id, page.workspace ?? '', current))) {
+      toast('Could not save the current text first, so nothing was restored. Try again when you are back online.', 'error');
+      return;
+    }
+    setRestoreDoc(doc as object);
+    if (hasText) toast('Restored. The text it replaced is the newest entry in version history.');
   };
   // Download this one page as a Markdown file. Mirrors the workspace backup's
   // page-to-markdown, but for a single page and on demand. An encrypted page needs
