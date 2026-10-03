@@ -76,7 +76,7 @@ import { isHoliday, countWorkdays, countDaysOff } from '../src/lib/swedishHolida
 import { publishRef, lookupRef, clearRef } from '../src/lib/refRegistry.ts';
 import { extractPageLinks, buildLinkGraph, outboundOf, backlinksOf } from '../src/lib/pageLinks.ts';
 import { searchEmoji } from '../src/lib/emoji.ts';
-import { hasInlineMarkdown, parseInlineMarkdown } from '../src/lib/inlineMarkdown.ts';
+import { hasInlineMarkdown, parseInlineMarkdown, looksLikeCode } from '../src/lib/inlineMarkdown.ts';
 import { onThisDay } from '../src/lib/agenda.ts';
 import { parseGithubUrl } from '../src/lib/github.ts';
 import { isImageIcon } from '../src/lib/pageIcon.ts';
@@ -5712,6 +5712,18 @@ test('two people changing columns at once both keep their change', () => {
     'my rename, their rename, both new columns, and the column I deleted stays deleted',
   );
   eq(mergeById(base, base, base.filter((c) => c.id !== 'b')).map((c) => c.id).join(), 'a,c', 'a column they deleted and I did not touch stays deleted');
+});
+
+test('looksLikeCode: pasted lines become code only when they read as code', () => {
+  ok(!looksLikeCode('Hotel Nikko\n2-18-25 Hakata Ekimae\nFukuoka 812-0011'), 'an address');
+  ok(!looksLikeCode('milk\neggs\nbread'), 'a shopping list');
+  ok(!looksLikeCode('Meet at the station at nine.\nBring the tickets.'), 'two sentences');
+  ok(looksLikeCode('const a = 1;\nconsole.log(a);'), 'javascript');
+  ok(looksLikeCode('$ npm install\n$ npm run build'), 'shell commands');
+  ok(looksLikeCode('def go():\n    return 1'), 'python');
+  ok(looksLikeCode('<div>\n  <p>hi</p>\n</div>'), 'markup');
+  ok(looksLikeCode('if (x) {\n  y();\n}'), 'braces');
+  ok(!looksLikeCode('one line only;'), 'a single line is never a code block');
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);

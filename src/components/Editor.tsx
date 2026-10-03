@@ -75,7 +75,7 @@ import { parseForm, slugifyField } from '../lib/formBlock';
 import { useData } from '../store/useData';
 import { toast } from '../store/useToast';
 import { markdownToTiptap } from '../lib/notionImport';
-import { hasInlineMarkdown, parseInlineMarkdown } from '../lib/inlineMarkdown';
+import { hasInlineMarkdown, parseInlineMarkdown, looksLikeCode } from '../lib/inlineMarkdown';
 import { splitMarkdownTables } from '../lib/markdownTable';
 import { parseLatLong, trackingChip } from '../lib/smartPaste';
 import { attrText } from '../lib/search';
@@ -91,6 +91,9 @@ type JSONBlock = { type: string; attrs?: Record<string, unknown>; content?: unkn
 // ourselves: markdown (headings/lists/fences) through the markdown parser, a
 // solid block of lines into a code block, and prose (paragraph breaks) into
 // paragraphs that keep their line breaks. Returns true when it handled the paste.
+const MARKDOWN_BLOCK = /(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|\|)/;
+const looksMarkdownText = (text: string) => MARKDOWN_BLOCK.test(text) || hasInlineMarkdown(text);
+
 function pasteRichText(editor: TiptapEditor, raw: string): boolean {
   const norm = raw.replace(/\r\n?/g, '\n');
   if (!norm.includes('\n')) {
@@ -105,15 +108,15 @@ function pasteRichText(editor: TiptapEditor, raw: string): boolean {
     return true;
   }
 
-  const looksMarkdown = /(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|\|)/.test(norm);
+  const looksMarkdown = MARKDOWN_BLOCK.test(norm);
   let content: JSONBlock[];
   if (looksMarkdown) {
     content = (markdownToTiptap(norm) as { content?: JSONBlock[] }).content ?? [];
-  } else if (!/\n\s*\n/.test(norm)) {
-    // No blank lines: treat as a code/command block, preserving every line.
+  } else if (!/\n\s*\n/.test(norm) && looksLikeCode(norm)) {
     content = [{ type: 'codeBlock', content: [{ type: 'text', text: norm.replace(/\n+$/, '') }] }];
   } else {
-    content = norm.split(/\n{2,}/).map((p) => {
+    const chunks = /\n\s*\n/.test(norm) ? norm.split(/\n{2,}/) : norm.replace(/\n+$/, '').split('\n');
+    content = chunks.map((p) => {
       const nodes: JSONBlock[] = [];
       p.split('\n').forEach((ln, i) => {
         if (i) nodes.push({ type: 'hardBreak' });
@@ -570,6 +573,12 @@ export function Editor({ content, editable, onChange, onFocusChange, focusText, 
             })();
             return true;
           }
+          // Formatted copies (from this editor, a web page, a document) paste as
+          // they are; only plain text and markdown go through the conversions here.
+          // Markdown is checked on the plain copy, since code editors put an HTML
+          // copy of it on the clipboard too.
+          const html = event.clipboardData?.getData('text/html') ?? '';
+          if (html && (html.includes('data-pm-slice') || !looksMarkdownText(text))) return false;
           // Keep multi-line text from collapsing onto one line.
           if (editorRef.current && pasteRichText(editorRef.current, text)) {
             event.preventDefault();
