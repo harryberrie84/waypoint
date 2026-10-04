@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { replayEarlyInput, type EarlyInput } from '../editor/earlyInput';
+import { RedoTidy } from '../editor/RedoTidy';
 import { holdPosition } from '../editor/heldPosition';
 import { Pencil, ListChecks, Table } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -430,7 +431,7 @@ export function Editor({ content, editable, onChange, onFocusChange, focusText, 
           // the built-in one to stop the two from fighting.
           ...(collab ? { undoRedo: false as const } : {}),
         }),
-        ...(collab ? [Collaboration.configure({ document: collab.doc })] : []),
+        ...(collab ? [Collaboration.configure({ document: collab.doc }), RedoTidy] : []),
         // Live cursors: render each collaborator's caret + selection in their
         // colour, with their name. Reads/writes only the ephemeral awareness
         // (decorations), never the document, so it can't touch anyone's text.
