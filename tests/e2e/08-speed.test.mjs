@@ -25,7 +25,9 @@ export default async function () {
     await Promise.all(Array.from({ length: 12 }, async () => {
       while (next < PAGES) {
         const k = next++;
-        pages.push(await api.must(api.create('pages', { title: `Page ${k}`, workspace: ws.id, owner: me.id, order: k, parent: '', content: doc(k), ydoc: snapshot }, me.token), 'page'));
+        // By number, not by finishing order: the creates run in parallel, and the
+        // colleagues below must type into pages 50 to 52, never into one checked later.
+        pages[k] = (await api.must(api.create('pages', { title: `Page ${k}`, workspace: ws.id, owner: me.id, order: k, parent: '', content: doc(k), ydoc: snapshot }, me.token), 'page'));
       }
     }));
 
