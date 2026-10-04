@@ -8,7 +8,10 @@ import { startSmtpSink } from './smtp.mjs';
 
 export const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), '..', '..'));
 export const SOURCE = resolve(process.env.WAYPOINT_SOURCE || ROOT);
-export const PB_VERSION = (readFileSync(join(ROOT, 'Dockerfile'), 'utf8').match(/ARG PB_VERSION=(\S+)/) || [])[1] || '0.22.21';
+// The image pins the server version, so tests use the same one. A checkout without
+// the Dockerfile (a private tree that deploys without Docker) gets the same pin.
+const DOCKERFILE = join(ROOT, 'Dockerfile');
+export const PB_VERSION = (existsSync(DOCKERFILE) && readFileSync(DOCKERFILE, 'utf8').match(/ARG PB_VERSION=(\S+)/)?.[1]) || '0.22.21';
 export const ADMIN = { email: 'admin@example.org', password: 'Adm1n-pass-2345' };
 
 function binaryName() {
