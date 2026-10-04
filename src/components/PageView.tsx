@@ -13,6 +13,7 @@ import { isEmptyDoc } from '../lib/doc';
 import { snapshotNow } from '../lib/versions';
 import { toast } from '../store/useToast';
 import { Editor } from './Editor';
+import { applyEarlyKey, isPreviewTextTarget, type EarlyInput } from '../editor/earlyInput';
 import { PageMap } from './PageMap';
 import { MindmapView } from './MindmapView';
 import { BacklinksStrip, LinksGraph } from './PageLinks';
@@ -400,14 +401,79 @@ export function PageView({ pageId }: { pageId: string }) {
     collabState.status === 'ready' &&
     collabState.editable;
 
+  // A click on the read-only preview, and the keys typed until the live editor
+  // mounts, are held here and handed to it (see editor/earlyInput.ts). Only while
+  // this page is editable but not live yet.
+  const earlyRef = useRef<EarlyInput | null>(null);
+  const stopEarlyKeys = useRef<(() => void) | null>(null);
+  const previewing = editable && collabEnabled && !canEditNow;
+  useEffect(() => {
+    earlyRef.current = null;
+    stopEarlyKeys.current?.();
+  }, [pageId]);
+  useEffect(() => {
+    if (!previewing) return;
+    const onDown = (e: MouseEvent) => {
+      earlyRef.current = isPreviewTextTarget(e.target) ? { x: e.clientX, y: e.clientY, text: '' } : null;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const early = earlyRef.current;
+      if (!early) return;
+      // Typing into the title, a search box or any other field is theirs.
+      if (document.activeElement && document.activeElement !== document.body) return;
+      if (e.key === 'Escape') {
+        earlyRef.current = null;
+        return;
+      }
+      const next = applyEarlyKey(early.text, e.key, { ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey });
+      if (next === null) return;
+      e.preventDefault();
+      early.text = next;
+    };
+    let timer = 0;
+    const stop = () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('keydown', onKey, true);
+      if (stopEarlyKeys.current === stop) stopEarlyKeys.current = null;
+    };
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('keydown', onKey, true);
+    stopEarlyKeys.current = stop;
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      // Keep holding keys until the live editor takes them; it does so right after
+      // it mounts. If it never does (it went live read-only, say), let go shortly
+      // so no key is held for good.
+      if (!earlyRef.current) stop();
+      else
+        timer = window.setTimeout(() => {
+          earlyRef.current = null;
+          stop();
+        }, 2000);
+    };
+  }, [previewing]);
+  const takeEarlyInput = useCallback(() => {
+    const early = earlyRef.current;
+    earlyRef.current = null;
+    stopEarlyKeys.current?.();
+    return early;
+  }, []);
+
   // Decrypt a locked page when the vault opens AND whenever the encrypted content
   // changes (an edit from another device). Skipped while you're editing here, so a
   // remote echo never clobbers what you're typing; your own optimistic content
   // stays until you blur.
+  //
+  // On a plaintext page this must stay quiet: it used to run on every keystroke
+  // (page.content changes each time) and reset both states, and those resets are
+  // extra synchronous renders. Fast typing chained enough of them for React to stop
+  // the page with "too many nested updates". So it keys on the envelope only, and
+  // only sets a state that actually differs.
+  const envelopeDep = locked ? page?.content : null;
   useEffect(() => {
-    setDecryptFailed(false);
+    if (decryptFailed) setDecryptFailed(false);
     if (!locked || vaultStatus !== 'unlocked' || !page) {
-      setDecrypted(null);
+      if (decrypted !== null) setDecrypted(null);
       return;
     }
     if (editingRef.current) return;
@@ -424,7 +490,7 @@ export function PageView({ pageId }: { pageId: string }) {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageId, locked, vaultStatus, wsKeyReady, page?.content]);
+  }, [pageId, locked, vaultStatus, wsKeyReady, envelopeDep]);
 
   const toggleLock = async () => {
     if (vaultStatus !== 'unlocked') {
@@ -1025,6 +1091,7 @@ export function PageView({ pageId }: { pageId: string }) {
                   pageId={pageId}
                   restore={restoreDoc}
                   onRestoreConsumed={() => setRestoreDoc(null)}
+                  takeEarlyInput={canEditNow ? takeEarlyInput : undefined}
                 />
                 {/* Who touched this last, and how much there is to read. Two people
                     sharing a plan ask "did you change this?" constantly, and the

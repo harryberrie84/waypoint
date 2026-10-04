@@ -16,6 +16,7 @@ import { parseLocaleNumber } from '../src/lib/number.ts';
 import { sortByKey, loadAllByKeyset, KEYSET_PAGE } from '../src/lib/keyset.ts';
 import { PAGE_LIST_FIELDS } from '../src/lib/pageFields.ts';
 import { readFileSync } from 'node:fs';
+import { applyEarlyKey, EARLY_INPUT_MAX } from '../src/editor/earlyInput.ts';
 import { isEmptyDoc, hasWidgetBlock, extractTableIds, remapTableIds, setImageThreadId } from '../src/lib/doc.ts';
 import { derivePlacePins, placeTablesForWorkspace, placeRowCells, nextSourceColor, SOURCE_COLORS } from '../src/lib/mapPins.ts';
 import { gridsByPage } from '../src/lib/grids.ts';
@@ -5782,6 +5783,21 @@ test('serverConfig: only an explicit false hides the sign-up form', () => {
   ok(readOpenRegistration({}), 'a body without the field leaves it open');
   ok(readOpenRegistration(null), 'so does no body at all');
   ok(readOpenRegistration('<html>404</html>'), 'and so does a proxy error page returned as 200');
+});
+
+test('earlyInput: keys typed on a page that is still connecting are held, not lost', () => {
+  let t = '';
+  for (const k of ['H', 'i', ' ', '!']) t = applyEarlyKey(t, k) ?? t;
+  eq(t, 'Hi !', 'printable keys are held in order');
+  eq(applyEarlyKey('Hi', 'Enter'), 'Hi\n', 'Enter starts a new line');
+  eq(applyEarlyKey('Hi', 'Backspace'), 'H', 'Backspace takes the last one back');
+  eq(applyEarlyKey('', 'Backspace'), '', 'Backspace on nothing is nothing');
+  eq(applyEarlyKey('Hi', 'ArrowLeft'), null, 'arrows are not held');
+  eq(applyEarlyKey('Hi', 'Tab'), null, 'Tab is not held');
+  eq(applyEarlyKey('Hi', 'v', { ctrl: true }), null, 'a shortcut is not text');
+  eq(applyEarlyKey('Hi', 'z', { meta: true }), null, 'nor is a Mac shortcut');
+  const full = 'x'.repeat(EARLY_INPUT_MAX);
+  eq(applyEarlyKey(full, 'y'), full, 'the hold stops growing at its cap');
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);

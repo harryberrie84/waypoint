@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { replayEarlyInput, type EarlyInput } from '../editor/earlyInput';
 import { holdPosition } from '../editor/heldPosition';
 import { Pencil, ListChecks, Table } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -271,6 +272,9 @@ interface EditorProps {
   // into the shared Yjs doc and reaches every peer. onRestoreConsumed clears it.
   restore?: object | null;
   onRestoreConsumed?: () => void;
+  /** Hands over a click and keys made on the read-only preview before this
+   *  editor went live, so they land here instead of nowhere. */
+  takeEarlyInput?: () => EarlyInput | null;
 }
 
 const EMPTY_DOC = { type: 'doc', content: [{ type: 'paragraph' }] };
@@ -318,7 +322,7 @@ function scrollToText(editor: TiptapEditor, text: string): boolean {
   return false;
 }
 
-export function Editor({ content, editable, onChange, onFocusChange, focusText, onFocusConsumed, pageId, collab, collabSeed, restore, onRestoreConsumed }: EditorProps) {
+export function Editor({ content, editable, onChange, onFocusChange, focusText, onFocusConsumed, pageId, collab, collabSeed, restore, onRestoreConsumed, takeEarlyInput }: EditorProps) {
   // Who I am, for my collaboration caret (name + a stable colour from my id).
   const meUser = useAuth((s) => s.user);
   const meId = meUser?.id ?? '';
@@ -346,7 +350,15 @@ export function Editor({ content, editable, onChange, onFocusChange, focusText, 
 
   // Drives the empty-page nudge (the big "write a note / checklist / table"
   // buttons), kept in sync with the doc so it vanishes the moment there's content.
-  const [empty, setEmpty] = useState(true);
+  // Set only on a real flip: onUpdate runs per keystroke, and a same-value setState
+  // there still queues a render while the editor has other work pending.
+  const [empty, setEmptyState] = useState(true);
+  const emptyRef = useRef(true);
+  const setEmpty = (v: boolean) => {
+    if (emptyRef.current === v) return;
+    emptyRef.current = v;
+    setEmptyState(v);
+  };
 
   const editor = useEditor(
     {
@@ -378,6 +390,24 @@ export function Editor({ content, editable, onChange, onFocusChange, focusText, 
             }
             collab.flushNow();
           }, 0);
+        }
+        // After the seed above (queued first, so it runs first): the doc holds its
+        // content before the held keys are typed into it.
+        // The view can still be detached from the page here, and focusing a
+        // detached view does nothing, so wait (briefly) until it is in the page.
+        if (takeEarlyInput && editable) {
+          let tries = 0;
+          const replay = () => {
+            if (editor.isDestroyed) return;
+            if (!editor.view.dom.isConnected && tries++ < 20) {
+              requestAnimationFrame(replay);
+              return;
+            }
+            const early = takeEarlyInput();
+            // Already typing here: the keys came straight in, leave the caret be.
+            if (early && !editor.isFocused) replayEarlyInput(editor, early);
+          };
+          setTimeout(replay, 0);
         }
       },
       extensions: [
