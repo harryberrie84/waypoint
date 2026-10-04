@@ -959,8 +959,30 @@ function ColumnHeader({ tableId, column }: { tableId: string; column: Column }) 
           <button
             type="button"
             onClick={() => {
-              deleteColumn(tableId, column.id);
               setOpen(false);
+              // Ask first, saying what is at stake, then offer an undo: one misclick
+              // on this menu used to take a whole column of values with it.
+              const rowsMap = useData.getState().rows;
+              const filled = selectRowsForTable(rowsMap, tableId).filter((r) => {
+                const v = r.cells[column.id];
+                return v != null && v !== '' && !(Array.isArray(v) && v.length === 0);
+              }).length;
+              const name = column.name || 'Untitled';
+              confirmAsk({
+                title: `Delete the column "${name}"?`,
+                message: filled
+                  ? `${filled} row${filled === 1 ? ' has a value' : 's have values'} in it. You can undo this right after.`
+                  : 'It is empty. You can undo this right after.',
+                confirmLabel: 'Delete column',
+                onConfirm: () => {
+                  const removed = deleteColumn(tableId, column.id);
+                  if (!removed) return;
+                  toastWithAction(`Deleted the column "${name}".`, {
+                    label: 'Undo',
+                    run: () => useData.getState().restoreColumn(tableId, removed.column, removed.index),
+                  });
+                },
+              });
             }}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
           >

@@ -1122,7 +1122,10 @@ interface DataState {
   restoreTableSnapshot: (tableId: string, snapshot: TableSnapshot) => Promise<void>;
   updateColumn: (tableId: string, columnId: string, patch: Partial<Column>) => void;
   moveColumn: (tableId: string, columnId: string, dir: 'left' | 'right') => void;
-  deleteColumn: (tableId: string, columnId: string) => void;
+  /** Takes a column off the table. Its values stay on every row, so restoreColumn
+   *  brings it back whole. Returns what restoreColumn needs, or null. */
+  deleteColumn: (tableId: string, columnId: string) => { column: Column; index: number } | null;
+  restoreColumn: (tableId: string, column: Column, index: number) => void;
   addSelectOption: (tableId: string, columnId: string, label: string) => SelectOption | null;
   setSelectOptionColor: (tableId: string, columnId: string, optionId: string, color: string) => void;
   toggleSelectOptionDone: (tableId: string, columnId: string, optionId: string) => void;
@@ -4774,30 +4777,39 @@ export const useData = create<DataState>((set, get) => ({
   },
 
   deleteColumn: (tableId, columnId) => {
-    if (viewerOnly(get().tables[tableId]?.workspace)) return;
-    let nextColumns: Column[] = [];
-    const affectedRows: TableRow[] = [];
+    if (viewerOnly(get().tables[tableId]?.workspace)) return null;
+    // Only the column definition goes. Its values used to be stripped from every
+    // row on the server in the same click, which made one misclick on a menu item
+    // a permanent loss of a whole column of data. Left on the rows they are hidden
+    // (nothing reads a cell without its column), cost a few bytes, survive
+    // encryption (cells with no column are sealed with the rest), and make undo a
+    // matter of putting the definition back.
+    const tbl = get().tables[tableId];
+    const index = tbl?.columns.findIndex((c) => c.id === columnId) ?? -1;
+    if (!tbl || index < 0) return null;
+    const column = tbl.columns[index];
+    const nextColumns = tbl.columns.filter((c) => c.id !== columnId);
     set((s) => {
-      const tbl = s.tables[tableId];
-      if (!tbl) return s;
-      nextColumns = tbl.columns.filter((c) => c.id !== columnId);
-      const rows = { ...s.rows };
-      for (const r of Object.values(rows)) {
-        if (r.table === tableId && columnId in r.cells) {
-          const cells = { ...r.cells };
-          delete cells[columnId];
-          rows[r.id] = { ...r, cells };
-          affectedRows.push(rows[r.id]);
-        }
-      }
-      return { tables: { ...s.tables, [tableId]: { ...tbl, columns: nextColumns } }, rows };
+      const t = s.tables[tableId];
+      if (!t) return s;
+      return { tables: { ...s.tables, [tableId]: { ...t, columns: t.columns.filter((c) => c.id !== columnId) } } };
     });
     persistColumns(tableId, nextColumns, 'deleteColumn');
-    for (const r of affectedRows) {
-      void cellsToPersist(r.workspace ?? '', r.cells, nextColumns).then((toStore) => {
-        if (toStore != null) rowsApi.update(r.id, { cells: toStore }).catch(() => {});
-      });
-    }
+    return { column, index };
+  },
+
+  restoreColumn: (tableId, column, index) => {
+    if (viewerOnly(get().tables[tableId]?.workspace)) return;
+    const tbl = get().tables[tableId];
+    if (!tbl || tbl.columns.some((c) => c.id === column.id)) return;
+    const nextColumns = [...tbl.columns];
+    nextColumns.splice(Math.min(Math.max(index, 0), nextColumns.length), 0, column);
+    set((s) => {
+      const t = s.tables[tableId];
+      if (!t) return s;
+      return { tables: { ...s.tables, [tableId]: { ...t, columns: nextColumns } } };
+    });
+    persistColumns(tableId, nextColumns, 'restoreColumn');
   },
 
   addSelectOption: (tableId, columnId, label) => {
