@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
-import * as L from 'leaflet';
+import type * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Globe, Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { spansDay, formatDateTime } from '../lib/tableQuery';
@@ -214,22 +214,32 @@ function MapView({ model, full }: { model: SharedModel; full: boolean }) {
   const key = JSON.stringify([full, model.viewType, placed.map((r) => [r.lat, r.lon])]);
   useEffect(() => {
     if (!ref.current || mapRef.current) return;
-    const map = L.map(ref.current, { scrollWheelZoom: false }).setView([20, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-    const latlngs: L.LatLngExpression[] = [];
-    for (const r of placed) {
-      const icon = L.divIcon({ html: pinSvg('#e05a86'), className: 'waypoint-pin', iconSize: [26, 34], iconAnchor: [13, 34], popupAnchor: [0, -30] });
-      L.marker([r.lat as number, r.lon as number], { icon }).addTo(map).bindPopup(`<strong>${(r.place || r.title).replace(/</g, '&lt;')}</strong>`);
-      latlngs.push([r.lat as number, r.lon as number]);
-    }
-    if (model.viewType === 'route' && latlngs.length > 1) {
-      L.polyline(latlngs, { color: '#e05a86', weight: 3, opacity: 0.8, dashArray: '6 6' }).addTo(map);
-    }
-    if (latlngs.length === 1) map.setView(latlngs[0], 12);
-    else if (latlngs.length) map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
-    mapRef.current = map;
-    const t = setTimeout(() => map.invalidateSize(), 60);
-    return () => { clearTimeout(t); map.remove(); mapRef.current = null; };
+    // The map library loads here, the first time a map is shown, not with the app.
+    let cancelled = false;
+    let cleanup = () => {};
+    void import('leaflet').then((Lf) => {
+      if (cancelled || !ref.current || mapRef.current) return;
+      const map = Lf.map(ref.current, { scrollWheelZoom: false }).setView([20, 0], 2);
+      Lf.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+      const latlngs: L.LatLngExpression[] = [];
+      for (const r of placed) {
+        const icon = Lf.divIcon({ html: pinSvg('#e05a86'), className: 'waypoint-pin', iconSize: [26, 34], iconAnchor: [13, 34], popupAnchor: [0, -30] });
+        Lf.marker([r.lat as number, r.lon as number], { icon }).addTo(map).bindPopup(`<strong>${(r.place || r.title).replace(/</g, '&lt;')}</strong>`);
+        latlngs.push([r.lat as number, r.lon as number]);
+      }
+      if (model.viewType === 'route' && latlngs.length > 1) {
+        Lf.polyline(latlngs, { color: '#e05a86', weight: 3, opacity: 0.8, dashArray: '6 6' }).addTo(map);
+      }
+      if (latlngs.length === 1) map.setView(latlngs[0], 12);
+      else if (latlngs.length) map.fitBounds(Lf.latLngBounds(latlngs).pad(0.2));
+      mapRef.current = map;
+      const t = setTimeout(() => map.invalidateSize(), 60);
+      cleanup = () => { clearTimeout(t); map.remove(); mapRef.current = null; };
+    });
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return <div ref={ref} className="h-full w-full" style={{ background: '#aadaff' }} />;

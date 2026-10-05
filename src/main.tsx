@@ -4,6 +4,7 @@ import './index.css';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { applyAppearance, loadAppearance, bootMode } from './lib/theme';
+import { warmLazyParts } from './lib/lazyParts';
 
 // Paint the saved theme + font onto <html> before React renders, so there's no
 // flash of the default palette on a reload. useTheme re-applies on every
@@ -25,6 +26,29 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
       .catch((err) => console.error('[sw] register failed', err));
   });
 }
+
+// A part that loads on first use can fail to load after a deploy: the page was
+// built against the previous version's files, which the server no longer has.
+// Reloading picks up the new version. Once a minute at most, and never offline,
+// where the cached copy is the only one there is.
+window.addEventListener('vite:preloadError', (event) => {
+  if (!navigator.onLine) return;
+  let last = 0;
+  try {
+    last = Number(sessionStorage.getItem('waypoint:reloadedForParts') || 0);
+  } catch {
+    /* storage unavailable */
+  }
+  if (Date.now() - last < 60000) return;
+  try {
+    sessionStorage.setItem('waypoint:reloadedForParts', String(Date.now()));
+  } catch {
+    /* storage unavailable */
+  }
+  event.preventDefault();
+  window.location.reload();
+});
+if (import.meta.env.PROD) warmLazyParts();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

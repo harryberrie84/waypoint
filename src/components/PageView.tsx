@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import { MessageSquare, Smile, Lock, Unlock, Globe, MoreHorizontal, Copy, Bookmark, BookmarkCheck, Image as ImageIcon, Upload, Printer, X, FileText, Map as MapIcon, Workflow, Zap, Columns3, Network, History, CalendarRange, CalendarDays, Wallet, Images, Camera, Paperclip, Boxes, FolderInput, LayoutGrid, Pin, ChevronDown, BookOpen, Users, CloudSun, Coins, Grid3x3, Layers, Repeat, Trophy } from 'lucide-react';
 import { useData, selectMyRole, canEdit, selectWorkspacePages } from '../store/useData';
 import { useAuth } from '../store/useAuth';
@@ -13,27 +13,35 @@ import { isEmptyDoc } from '../lib/doc';
 import { snapshotNow } from '../lib/versions';
 import { toast } from '../store/useToast';
 import { Editor } from './Editor';
+import { lazyParts } from '../lib/lazyParts';
 import { applyEarlyKey, isPreviewTextTarget, type EarlyInput } from '../editor/earlyInput';
-import { PageMap } from './PageMap';
-import { MindmapView } from './MindmapView';
+// Every tab but the notes loads the first time it is opened, not with the app:
+// most visits to a page never leave the notes.
+const MindmapView = lazy(() => lazyParts.MindmapView().then((m) => ({ default: m.MindmapView })));
+const KanbanView = lazy(() => lazyParts.KanbanView().then((m) => ({ default: m.KanbanView })));
+const TierListTab = lazy(() => lazyParts.TierListTab().then((m) => ({ default: m.TierListTab })));
+const SheetTab = lazy(() => lazyParts.SheetTab().then((m) => ({ default: m.SheetTab })));
+const FlashcardsTab = lazy(() => lazyParts.FlashcardsTab().then((m) => ({ default: m.FlashcardsTab })));
+const RotaTab = lazy(() => lazyParts.RotaTab().then((m) => ({ default: m.RotaTab })));
+const BracketTab = lazy(() => lazyParts.BracketTab().then((m) => ({ default: m.BracketTab })));
+const CurrencyTab = lazy(() => lazyParts.CurrencyTab().then((m) => ({ default: m.CurrencyTab })));
+const ItineraryTab = lazy(() => lazyParts.ItineraryTab().then((m) => ({ default: m.ItineraryTab })));
+const CalendarTab = lazy(() => lazyParts.CalendarTab().then((m) => ({ default: m.CalendarTab })));
+const BudgetTab = lazy(() => lazyParts.BudgetTab().then((m) => ({ default: m.BudgetTab })));
+const MoodboardTab = lazy(() => lazyParts.MoodboardTab().then((m) => ({ default: m.MoodboardTab })));
+const FilesTab = lazy(() => lazyParts.FilesTab().then((m) => ({ default: m.FilesTab })));
+const PhotosTab = lazy(() => lazyParts.PhotosTab().then((m) => ({ default: m.PhotosTab })));
+const FlowView = lazy(() => lazyParts.FlowView().then((m) => ({ default: m.FlowView })));
+const PeopleTab = lazy(() => lazyParts.PeopleTab().then((m) => ({ default: m.PeopleTab })));
+const WeatherTab = lazy(() => lazyParts.WeatherTab().then((m) => ({ default: m.WeatherTab })));
+const tabLoading = <div className="py-16 text-center text-sm text-ink-faint dark:text-coal-soft">loading…</div>;
+// The map tab loads with its map library the first time it is opened, not with
+// the app: most visits to a page never open it.
+const PageMap = lazy(() => lazyParts.PageMap().then((m) => ({ default: m.PageMap })));
 import { BacklinksStrip, LinksGraph } from './PageLinks';
 import { VersionHistory } from './VersionHistory';
-import { KanbanView } from './KanbanView';
-import { TierListTab } from './TierListTab';
-import { SheetTab } from './SheetTab';
-import { FlashcardsTab } from './FlashcardsTab';
-import { RotaTab } from './RotaTab';
-import { BracketTab } from './BracketTab';
-import { CurrencyTab } from './CurrencyTab';
 import { Popover } from './Popover';
-import { ItineraryTab } from './ItineraryTab';
-import { CalendarTab } from './CalendarTab';
-import { BudgetTab } from './BudgetTab';
-import { MoodboardTab } from './MoodboardTab';
-import { FilesTab } from './FilesTab';
-import { PhotosTab } from './PhotosTab';
 import { EmojiPicker } from './EmojiPicker';
-import { FlowView } from './FlowView';
 import { CommentsPanel } from './CommentsPanel';
 import { PresenceBar } from './PresenceBar';
 import { SharePanel } from './SharePanel';
@@ -43,8 +51,6 @@ import { useCollab } from '../hooks/useCollab';
 import { isImageIcon } from '../lib/pageIcon';
 import { avatarColor, initials } from '../lib/avatar';
 import { extractPlainText } from '../lib/search';
-import { PeopleTab } from './PeopleTab';
-import { WeatherTab } from './WeatherTab';
 import { processImageFile, ImageTooLargeError } from '../lib/image';
 import { uploadsApi } from '../lib/api';
 import { buildPrintHtml, buildBookletHtml, printHtml } from '../lib/printDoc';
@@ -838,71 +844,105 @@ export function PageView({ pageId }: { pageId: string }) {
 
         {tab === 'itinerary' ? (
           <div className="min-h-0 flex-1">
-            <ItineraryTab pageId={pageId} presence={rowPresence} body={decrypted} />
+            <Suspense fallback={tabLoading}>
+              <ItineraryTab pageId={pageId} presence={rowPresence} body={decrypted} />
+            </Suspense>
           </div>
         ) : tab === 'calendar' ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <CalendarTab pageId={pageId} presence={rowPresence} body={decrypted} />
+            <Suspense fallback={tabLoading}>
+              <CalendarTab pageId={pageId} presence={rowPresence} body={decrypted} />
+            </Suspense>
           </div>
         ) : tab === 'budget' ? (
           <div className="min-h-0 flex-1">
-            <BudgetTab pageId={pageId} body={decrypted} />
+            <Suspense fallback={tabLoading}>
+              <BudgetTab pageId={pageId} body={decrypted} />
+            </Suspense>
           </div>
         ) : tab === 'currency' ? (
           <div className="min-h-0 flex-1">
-            <CurrencyTab pageId={pageId} editable={editable} />
+            <Suspense fallback={tabLoading}>
+              <CurrencyTab pageId={pageId} editable={editable} />
+            </Suspense>
           </div>
         ) : tab === 'moodboard' ? (
           <div className="min-h-0 flex-1">
-            <MoodboardTab pageId={pageId} body={decrypted} />
+            <Suspense fallback={tabLoading}>
+              <MoodboardTab pageId={pageId} body={decrypted} />
+            </Suspense>
           </div>
         ) : tab === 'people' ? (
           <div className="min-h-0 flex-1">
-            <PeopleTab pageId={pageId} body={decrypted} />
+            <Suspense fallback={tabLoading}>
+              <PeopleTab pageId={pageId} body={decrypted} />
+            </Suspense>
           </div>
         ) : tab === 'weather' ? (
           <div className="min-h-0 flex-1">
-            <WeatherTab pageId={pageId} editable={editable} body={decrypted} />
+            <Suspense fallback={tabLoading}>
+              <WeatherTab pageId={pageId} editable={editable} body={decrypted} />
+            </Suspense>
           </div>
         ) : tab === 'files' ? (
           <div className="min-h-0 flex-1">
-            <FilesTab pageId={pageId} editable={editable} body={decrypted} />
+            <Suspense fallback={tabLoading}>
+              <FilesTab pageId={pageId} editable={editable} body={decrypted} />
+            </Suspense>
           </div>
         ) : tab === 'photos' ? (
           <div className="min-h-0 flex-1">
-            <PhotosTab pageId={pageId} editable={editable} body={decrypted} />
+            <Suspense fallback={tabLoading}>
+              <PhotosTab pageId={pageId} editable={editable} body={decrypted} />
+            </Suspense>
           </div>
         ) : tab === 'kanban' ? (
           <div className="min-h-0 flex-1 py-3">
-            <KanbanView pageId={pageId} editable={editable} presence={rowPresence} />
+            <Suspense fallback={tabLoading}>
+              <KanbanView pageId={pageId} editable={editable} presence={rowPresence} />
+            </Suspense>
           </div>
         ) : tab === 'tierlist' ? (
           <div className="min-h-0 flex-1">
-            <TierListTab pageId={pageId} editable={editable} />
+            <Suspense fallback={tabLoading}>
+              <TierListTab pageId={pageId} editable={editable} />
+            </Suspense>
           </div>
         ) : tab === 'sheet' ? (
           <div className="min-h-0 flex-1">
-            <SheetTab pageId={pageId} editable={editable} />
+            <Suspense fallback={tabLoading}>
+              <SheetTab pageId={pageId} editable={editable} />
+            </Suspense>
           </div>
         ) : tab === 'cards' ? (
           <div className="min-h-0 flex-1">
-            <FlashcardsTab pageId={pageId} editable={editable} />
+            <Suspense fallback={tabLoading}>
+              <FlashcardsTab pageId={pageId} editable={editable} />
+            </Suspense>
           </div>
         ) : tab === 'rota' ? (
           <div className="min-h-0 flex-1">
-            <RotaTab pageId={pageId} editable={editable} />
+            <Suspense fallback={tabLoading}>
+              <RotaTab pageId={pageId} editable={editable} />
+            </Suspense>
           </div>
         ) : tab === 'bracket' ? (
           <div className="min-h-0 flex-1">
-            <BracketTab pageId={pageId} editable={editable} />
+            <Suspense fallback={tabLoading}>
+              <BracketTab pageId={pageId} editable={editable} />
+            </Suspense>
           </div>
         ) : tab === 'map' ? (
           <div className="min-h-0 flex-1">
-            <PageMap pageId={pageId} presence={pinPresence} onFocusPin={focusPin} body={decrypted} />
+            <Suspense fallback={<div className="py-16 text-center text-sm text-ink-faint dark:text-coal-soft">loading the map…</div>}>
+              <PageMap pageId={pageId} presence={pinPresence} onFocusPin={focusPin} body={decrypted} />
+            </Suspense>
           </div>
         ) : tab === 'mindmap' ? (
           <div className="min-h-0 flex-1">
-            <MindmapView pageId={pageId} presence={nodePresence} onFocusNode={focusNode} />
+            <Suspense fallback={tabLoading}>
+              <MindmapView pageId={pageId} presence={nodePresence} onFocusNode={focusNode} />
+            </Suspense>
           </div>
         ) : tab === 'links' ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -910,7 +950,9 @@ export function PageView({ pageId }: { pageId: string }) {
           </div>
         ) : tab === 'flow' ? (
           <div className="min-h-0 flex-1">
-            <FlowView pageId={pageId} />
+            <Suspense fallback={tabLoading}>
+              <FlowView pageId={pageId} />
+            </Suspense>
           </div>
         ) : (
           <div className="group/page flex-1 overflow-y-auto">

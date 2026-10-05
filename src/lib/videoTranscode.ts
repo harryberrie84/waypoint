@@ -11,18 +11,14 @@
 //
 // Availability is checked, never assumed: WebCodecs needs Safari/iOS 17+, and an
 // older browser has to fall back to the honest rejection rather than hang.
-import {
-  Input,
-  Output,
-  Conversion,
-  BlobSource,
-  BufferTarget,
-  Mp4OutputFormat,
-  ALL_FORMATS,
-  QUALITY_MEDIUM,
-  type Quality,
-} from 'mediabunny';
+//
+// The library is loaded the first time a video is probed or converted, not with
+// the app: it is the largest thing the app uses, and most visits never touch a
+// video.
+import type { Quality } from 'mediabunny';
 import { targetDimensions } from './image';
+
+const mediabunny = () => import('mediabunny');
 
 /** Presets the picker offers. `edge` is the longest output edge in pixels. */
 export const VIDEO_PRESETS = [
@@ -127,6 +123,7 @@ export interface VideoInfo {
  *  preset would not actually shrink the frame. Cheap: headers only, no decode. */
 export async function probeVideo(file: File): Promise<VideoInfo | null> {
   try {
+    const { Input, BlobSource, ALL_FORMATS } = await mediabunny();
     const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
     const track = await input.getPrimaryVideoTrack();
     if (!track) return null;
@@ -209,6 +206,7 @@ export async function transcodeVideo(
 ): Promise<TranscodeResult> {
   if (!canTranscodeVideo()) throw new Error('This browser cannot compress video.');
 
+  const { Input, Output, Conversion, BlobSource, BufferTarget, Mp4OutputFormat, ALL_FORMATS, QUALITY_MEDIUM } = await mediabunny();
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
   if (!track) throw new Error('That file has no video track to compress.');

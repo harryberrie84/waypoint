@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
-import * as L from 'leaflet';
+import type * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Map as MapIcon, Table2, Copy, Globe, Maximize2, Minimize2 } from 'lucide-react';
 import { placeClipboardText, type MapPlace } from '../lib/mapExport';
@@ -47,23 +47,33 @@ function SharedMapView({ node }: NodeViewProps) {
   // has no size). Tearing it down on tab switch keeps sizing correct.
   useEffect(() => {
     if (tab !== 'map' || !containerRef.current || mapRef.current) return;
-    const map = L.map(containerRef.current, { scrollWheelZoom: false }).setView([20, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-    const latlngs: L.LatLngExpression[] = [];
-    for (const p of places) {
-      if (typeof p.lat !== 'number' || typeof p.lon !== 'number') continue;
-      const icon = L.divIcon({ html: pinSvg('#e05a86'), className: 'waypoint-pin', iconSize: [26, 34], iconAnchor: [13, 34], popupAnchor: [0, -30] });
-      L.marker([p.lat, p.lon], { icon }).addTo(map).bindPopup(popupHtml(p));
-      latlngs.push([p.lat, p.lon]);
-    }
-    if (latlngs.length === 1) map.setView(latlngs[0], 12);
-    else if (latlngs.length) map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
-    mapRef.current = map;
-    const t = setTimeout(() => map.invalidateSize(), 60);
+    // The map library loads here, the first time a map is shown, not with the app.
+    let cancelled = false;
+    let cleanup = () => {};
+    void import('leaflet').then((Lf) => {
+      if (cancelled || !containerRef.current || mapRef.current) return;
+      const map = Lf.map(containerRef.current, { scrollWheelZoom: false }).setView([20, 0], 2);
+      Lf.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+      const latlngs: L.LatLngExpression[] = [];
+      for (const p of places) {
+        if (typeof p.lat !== 'number' || typeof p.lon !== 'number') continue;
+        const icon = Lf.divIcon({ html: pinSvg('#e05a86'), className: 'waypoint-pin', iconSize: [26, 34], iconAnchor: [13, 34], popupAnchor: [0, -30] });
+        Lf.marker([p.lat, p.lon], { icon }).addTo(map).bindPopup(popupHtml(p));
+        latlngs.push([p.lat, p.lon]);
+      }
+      if (latlngs.length === 1) map.setView(latlngs[0], 12);
+      else if (latlngs.length) map.fitBounds(Lf.latLngBounds(latlngs).pad(0.2));
+      mapRef.current = map;
+      const t = setTimeout(() => map.invalidateSize(), 60);
+      cleanup = () => {
+        clearTimeout(t);
+        map.remove();
+        mapRef.current = null;
+      };
+    });
     return () => {
-      clearTimeout(t);
-      map.remove();
-      mapRef.current = null;
+      cancelled = true;
+      cleanup();
     };
     // Re-create (not just invalidateSize) when fullscreen toggles: the container
     // resizes, and a fresh map reliably paints its tiles, whereas invalidateSize

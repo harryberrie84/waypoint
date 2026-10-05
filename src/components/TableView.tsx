@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { formulaFor, queryRows, computedCells } from '../lib/scope';
 import { Plus, Trash2, Tag, ChevronDown, ChevronRight, Maximize2, Download, Upload, FileText, Copy, CalendarPlus, Link2, Unlink, AlertTriangle, ArrowLeft, ArrowRight, Share2, RefreshCw, Globe, LayoutList } from 'lucide-react';
 import { findClashes } from '../lib/clash';
@@ -28,13 +28,17 @@ import { ActionEditor } from './ActionEditor';
 import { AutomationsButton } from './AutomationsPanel';
 import { TableToolbar } from './TableToolbar';
 import { Popover } from './Popover';
+import { lazyParts } from '../lib/lazyParts';
 import { BoardView } from './TableBoardView';
 import { GalleryView } from './TableGalleryView';
 import { CalendarView } from './TableCalendarView';
 import { ScheduleView } from './TableScheduleView';
 import { TimelineView } from './TableTimelineView';
-import { MapView } from './TableMapView';
-import { RouteView } from './TableRouteView';
+// Map and route views bring the map library with them, so they load when a table
+// is first shown that way.
+const MapView = lazy(() => lazyParts.TableMapView().then((m) => ({ default: m.MapView })));
+const RouteView = lazy(() => lazyParts.TableRouteView().then((m) => ({ default: m.RouteView })));
+const mapLoading = <div className="py-10 text-center text-sm text-ink-faint dark:text-coal-soft">loading the map…</div>;
 
 // ---------------------------------------------------------------------------
 // TableView, the relational database block. Orchestrates the per-table view
@@ -217,8 +221,16 @@ export function TableView({ tableId, embed, bare = false }: { tableId: string; e
       {view.type === 'calendar' && <CalendarView tableId={tableId} table={table} rows={rows} view={view} />}
       {view.type === 'schedule' && <ScheduleView tableId={tableId} table={table} rows={rows} view={view} />}
       {view.type === 'timeline' && <TimelineView tableId={tableId} table={table} rows={rows} view={view} />}
-      {view.type === 'map' && <MapView tableId={tableId} table={table} rows={rows} view={view} />}
-      {view.type === 'route' && <RouteView tableId={tableId} table={table} rows={rows} view={view} />}
+      {view.type === 'map' && (
+        <Suspense fallback={mapLoading}>
+          <MapView tableId={tableId} table={table} rows={rows} view={view} />
+        </Suspense>
+      )}
+      {view.type === 'route' && (
+        <Suspense fallback={mapLoading}>
+          <RouteView tableId={tableId} table={table} rows={rows} view={view} />
+        </Suspense>
+      )}
       </fieldset>
 
       {ctxMenu && (
