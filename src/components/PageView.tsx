@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
+import { useEscape } from '../hooks/useEscape';
 import { MessageSquare, Smile, Lock, Unlock, Globe, MoreHorizontal, Copy, Bookmark, BookmarkCheck, Image as ImageIcon, Upload, Printer, X, FileText, Map as MapIcon, Workflow, Zap, Columns3, Network, History, CalendarRange, CalendarDays, Wallet, Images, Camera, Paperclip, Boxes, FolderInput, LayoutGrid, Pin, ChevronDown, BookOpen, Users, CloudSun, Coins, Grid3x3, Layers, Repeat, Trophy } from 'lucide-react';
 import { useData, selectMyRole, canEdit, selectWorkspacePages } from '../store/useData';
 import { useAuth } from '../store/useAuth';
@@ -143,6 +144,7 @@ export function PageView({ pageId }: { pageId: string }) {
     return () => useData.getState().setCommentsOpen(false);
   }, [showComments]);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  useEscape(emojiOpen, () => setEmojiOpen(false));
   const [shareOpen, setShareOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);

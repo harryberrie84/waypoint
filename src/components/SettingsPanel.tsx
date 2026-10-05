@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useEscape } from '../hooks/useEscape';
 import { Users, X, Mail, Shield, Eye, Pencil, Trash2, Clock, Dices, SlidersHorizontal, Lock, Hash, Download, Upload, Image as ImageIcon, ShieldCheck, ShieldAlert, Home } from 'lucide-react';
 import { readZip, type ZipEntry } from '../lib/unzip';
 import { parseNotionExport } from '../lib/notionImport';
@@ -479,6 +480,9 @@ export function SettingsPanel({ open, onClose, initial = 'members' }: Props) {
       clearInterval(t);
     };
   }, [open]);
+
+  useEscape(open, onClose);
+  useEscape(open && wsIconOpen, () => setWsIconOpen(false));
 
   if (!open) return null;
 

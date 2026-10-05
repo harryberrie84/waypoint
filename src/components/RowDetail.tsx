@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useEscape } from '../hooks/useEscape';
 import { X, Plus, Trash2, Maximize2, Smile, Image as ImageIcon, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react';
 import { useData } from '../store/useData';
 import type { ColumnType } from '../types';
@@ -53,6 +54,7 @@ export function RowDetail() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [iconOpen, setIconOpen] = useState(false);
+  useEscape(iconOpen, () => setIconOpen(false));
 
   // Esc closes; arrows hop to a neighbouring row when the view underneath
   // (board/calendar) has registered its order. Inert while a field or the body

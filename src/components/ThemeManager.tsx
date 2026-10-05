@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useEscape } from '../hooks/useEscape';
 import { Palette, X, RotateCcw, Check, Search } from 'lucide-react';
 import {
   PRESETS,
@@ -71,6 +72,7 @@ export function ThemeManager({ open, onClose, mode, appearance, applyPreset, set
     if (!open || pane !== 'font') return;
     for (const f of FONTS) ensureFontLoaded(f.url);
   }, [open, pane]);
+  useEscape(open, onClose);
   if (!open) return null;
 
   const q = fontQuery.trim().toLowerCase();
