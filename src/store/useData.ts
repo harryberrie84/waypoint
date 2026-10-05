@@ -1227,8 +1227,22 @@ function activeWsForWrite(): string {
 // upload can never be deleted through the app (the delete rule requires a
 // workspace), so this has to track the active workspace rather than be passed at
 // each of upload()'s many call sites.
-setUploadWorkspace(activeWsForWrite());
-useWorkspace.subscribe(() => setUploadWorkspace(activeWsForWrite()));
+//
+// The server refuses an upload with no workspace (it let any account store files),
+// so before workspaces have loaded, or in the old synthesized default, a file is
+// stamped with a workspace I can write to rather than with nothing.
+function uploadWorkspaceFor(): string {
+  const active = activeWsForWrite();
+  if (active) return active;
+  const { workspaces, members } = useWorkspace.getState();
+  const me = pb.authStore.record?.id ?? '';
+  const writable = workspaces.find(
+    (w) => w.id !== '__default__' && (w.owner === me || members.some((m) => m.workspace === w.id && m.user === me && m.role !== 'viewer')),
+  );
+  return writable?.id ?? '';
+}
+setUploadWorkspace(uploadWorkspaceFor());
+useWorkspace.subscribe(() => setUploadWorkspace(uploadWorkspaceFor()));
 
 // What to persist for a row's cells. In an encrypted workspace, the operational
 // fields (reminder datetime, person ids, __notified sentinels) stay plaintext so

@@ -20,6 +20,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA = join(ROOT, 'pocketbase', 'schema.json');
 const OUT = join(ROOT, 'server', 'pb_migrations', '1699999999_bootstrap.js');
 const RULES_OUT = join(ROOT, 'server', 'pb_migrations', '1700000015_narrow_write_rules.js');
+// The same rules again under a later number. An install that already ran 15 never
+// runs it again, so a rule tightened after that has to arrive in a new file.
+const RULES_OUT_LATEST = join(ROOT, 'server', 'pb_migrations', '1700000019_rules_again.js');
 
 // The incremental migrations that sit beside the bootstrap. They exist for
 // installs older than it, and on a FRESH database every collection they create
@@ -181,6 +184,8 @@ const ADMIN_OF_ROW =
   '@collection.workspace_members:adm.user ?= @request.auth.id && @collection.workspace_members:adm.role ?= "admin"))';
 const TEXT_WS_MEMBER =
   'workspace != "" && @collection.workspace_members:mem.workspace ?= workspace && @collection.workspace_members:mem.user ?= @request.auth.id';
+const TARGET_IS_MEMBER = '(@collection.workspace_members:tgt.workspace ?= workspace && @collection.workspace_members:tgt.user ?= user)';
+const HOLDS_KEY = '(@collection.workspace_keys:mine.workspace ?= workspace && @collection.workspace_keys:mine.user ?= @request.auth.id)';
 const RULES = {
   pages: {
     createRule: `${AUTHED} && ${CAN_WRITE}`,
@@ -221,6 +226,11 @@ const RULES = {
     deleteRule: `${AUTHED} && (user = @request.auth.id || ${ADMIN_OF_ROW}) && ${NOT_THE_OWNER_ROW}`,
   },
   workspace_keys: {
+    // Your own key row, or one for another member of this workspace if you can
+    // edit here and already hold the key. A viewer, or anyone without the key,
+    // could otherwise plant a key of their own making for a member who has none.
+    createRule:
+      `${AUTHED} && ${MEMBER} && ${TARGET_IS_MEMBER} && (user = @request.auth.id || (${CAN_WRITE} && ${HOLDS_KEY}))`,
     updateRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW}) && @request.data.workspace:isset = false`,
     deleteRule: `${AUTHED} && ${MEMBER} && (user = @request.auth.id || ${ADMIN_OF_ROW})`,
   },
@@ -240,7 +250,9 @@ const RULES = {
   file_trash: { listRule: READER, viewRule: READER, createRule: WRITER_SCOPED, updateRule: WRITER_SCOPED, deleteRule: WRITER_SCOPED },
   uploads: {
     listRule: READER,
-    createRule: `${AUTHED} && (workspace = "" || ${CAN_WRITE})`,
+    // Only someone who can edit a workspace uploads into it. An empty workspace was
+    // allowed, which let any signed-in account store files on this server.
+    createRule: WRITER_SCOPED,
     deleteRule: WRITER_SCOPED,
   },
 };
@@ -473,6 +485,12 @@ if (CHECK) {
   } catch {
   }
   if (curRules !== rulesMigration) drift.push('server/pb_migrations/1700000015_narrow_write_rules.js');
+  let curLatest = '';
+  try {
+    curLatest = readFileSync(RULES_OUT_LATEST, 'utf8');
+  } catch {
+  }
+  if (curLatest !== rulesMigration) drift.push('server/pb_migrations/1700000019_rules_again.js');
   if (drift.length) {
     console.error('schema drift in: ' + drift.join(', '));
     console.error('run `npm run schema:gen` and commit the result');
@@ -483,5 +501,6 @@ if (CHECK) {
   writeFileSync(SCHEMA, canonical);
   writeFileSync(OUT, migration);
   writeFileSync(RULES_OUT, rulesMigration);
+  writeFileSync(RULES_OUT_LATEST, rulesMigration);
   console.log(`wrote pocketbase/schema.json and the bootstrap migration (${all.length} collections)`);
 }

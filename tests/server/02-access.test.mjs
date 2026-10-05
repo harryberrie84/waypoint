@@ -7,7 +7,7 @@ const allowed = (r, what) => ok(r.status >= 200 && r.status < 300, `${what}: exp
 
 export const SETUPS = [
   { label: 'every hook, as the Docker image runs', options: {} },
-  { label: 'only the invite hooks, as live runs', options: { onlyHooks: ['invite_email.pb.js', 'invite_claim.pb.js', 'fresh_fields.pb.js', 'gate_registration.pb.js'] } },
+  { label: 'only the invite hooks, as live runs', options: { onlyHooks: ['invite_email.pb.js', 'invite_claim.pb.js', 'fresh_fields.pb.js', 'gate_registration.pb.js', 'write_guards.pb.js'] } },
 ];
 
 export default async function () {
@@ -281,17 +281,18 @@ async function run({ label, options }) {
         allowed(await api.update('presence', pres.data.id, { page: page.id, user: member.id, mode: 'editing', heartbeat: new Date().toISOString() }, member.token), 'presence heartbeat');
         refused(await api.update('presence', pres.data.id, { page: outsiderPage.id, user: member.id }, member.token), 'presence moved onto a foreign page');
         allowed(await api.create('file_trash', { workspace: ws.id, url: '/api/files/x', name: 'x', status: 'pending' }, member.token), 'trash entry');
+        // The app grants only from a key it holds, so the owner stores theirs first.
+        const k = await api.create('workspace_keys', { workspace: ws.id, user: owner.id, wrappedKey: 'k2' }, owner.token);
+        allowed(k, 'owner stores their own key');
         allowed(await api.create('workspace_keys', { workspace: ws.id, user: member.id, wrappedKey: 'k' }, owner.token), 'owner grants a key');
-        const k = await api.create('workspace_keys', { workspace: ws.id, user: owner.id, wrappedKey: 'k2' }, member.token);
-        allowed(k, 'member grants a key');
         refused(await api.remove('workspace_keys', k.data.id, viewer.token), "viewer deletes the owner's key");
         const ws3 = await api.workspace(owner, 'Second');
         allowed(await api.update('pages', page.id, { workspace: ws3.id }, owner.token), 'owner moves a page between own workspaces');
         allowed(await api.update('pages', page.id, { workspace: ws.id }, owner.token), 'and back');
         const up = new FormData();
         up.append('file', new Blob(['x'], { type: 'text/plain' }), 'x.txt');
-        up.append('workspace', '');
-        allowed(await api.call('POST', '/api/collections/uploads/records', undefined, member.token, { form: up }), 'upload before a workspace is chosen');
+        up.append('workspace', ws.id);
+        allowed(await api.call('POST', '/api/collections/uploads/records', undefined, member.token, { form: up }), 'member uploads a file');
         allowed(await api.remove('workspace_members', m.id, member.token), 'member leaves');
         const again = await api.signup('again');
         const a = await api.invite(owner, ws, again, 'editor');
