@@ -47,6 +47,20 @@ export default async function () {
         refused(await upload(ed, 'x.xml', 'application/xml', '<a/>', ws.id), 'an XML file');
       });
 
+    await check('deleting a file for good makes its link stop working',
+      'Upload links are long and unguessable but never expire. If one leaks, deleting the file (and uploading it again if it is still needed) is how its old link is shut.',
+      async () => {
+        const fd = new FormData();
+        fd.append('file', new Blob(['secret plans'], { type: 'application/pdf' }), 'plans.pdf');
+        fd.append('workspace', ws.id);
+        const r = await fetch(`${pb.url}/api/collections/uploads/records`, { method: 'POST', headers: { Authorization: ed.token }, body: fd });
+        const rec = await r.json();
+        const link = `${pb.url}/api/files/${rec.collectionId}/${rec.id}/${rec.file}`;
+        eq((await fetch(link)).status, 200, 'the link works while the file exists');
+        eq((await api.call('DELETE', `/api/collections/uploads/records/${rec.id}`, undefined, ed.token)).status, 204, 'an editor deletes the file');
+        eq((await fetch(link)).status, 404, 'the old link after the delete');
+      });
+
     await check('a workspace key is planted only by someone who holds it and can edit',
       'A key row someone else made for you is the key you encrypt with. A viewer, or a member without the key, could hand a newcomer a key of their own.',
       async () => {
