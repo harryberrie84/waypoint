@@ -16,6 +16,7 @@ import { parseLocaleNumber } from '../src/lib/number.ts';
 import { sortByKey, loadAllByKeyset, KEYSET_PAGE } from '../src/lib/keyset.ts';
 import { PAGE_LIST_FIELDS } from '../src/lib/pageFields.ts';
 import { readFileSync } from 'node:fs';
+import { rankCommands } from '../src/lib/slashRank.ts';
 import { applyEarlyKey, EARLY_INPUT_MAX } from '../src/editor/earlyInput.ts';
 import { isEmptyDoc, hasWidgetBlock, extractTableIds, remapTableIds, setImageThreadId } from '../src/lib/doc.ts';
 import { derivePlacePins, placeTablesForWorkspace, placeRowCells, nextSourceColor, SOURCE_COLORS } from '../src/lib/mapPins.ts';
@@ -5798,6 +5799,27 @@ test('earlyInput: keys typed on a page that is still connecting are held, not lo
   eq(applyEarlyKey('Hi', 'z', { meta: true }), null, 'nor is a Mac shortcut');
   const full = 'x'.repeat(EARLY_INPUT_MAX);
   eq(applyEarlyKey(full, 'y'), full, 'the hold stops growing at its cap');
+});
+
+test('slash menu: the command you name comes first, and nothing that matched before is dropped', () => {
+  const items = [
+    { title: 'Math', keywords: ['math', 'equation', 'formula'] },
+    { title: 'Synced page', keywords: ['synced', 'mirror', 'embed page'] },
+    { title: 'Formula', keywords: ['formula', 'fx'] },
+    { title: 'Embed', keywords: ['embed', 'iframe', 'youtube'] },
+    { title: 'Table of contents', keywords: ['toc', 'outline'] },
+    { title: 'Tabletop dice', keywords: ['roll'] },
+  ];
+  const titles = (q: string) => rankCommands(items, q).map((i) => i.title);
+  eq(titles('embed')[0], 'Embed', '/embed');
+  eq(titles('formula')[0], 'Formula', '/formula');
+  eq(titles('formula'), ['Formula', 'Math'], 'Math still offered for /formula, after it');
+  eq(titles('embed'), ['Embed', 'Synced page'], 'Synced page still offered for /embed, after it');
+  eq(titles('tab'), ['Table of contents', 'Tabletop dice'], 'a shared prefix keeps the list order');
+  eq(titles('contents'), ['Table of contents'], 'a word inside the name matches');
+  eq(titles('youtube'), ['Embed'], 'a keyword alone matches');
+  eq(titles('zzz'), [], 'no match, nothing offered');
+  eq(titles('').length, items.length, 'an empty query offers everything');
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);

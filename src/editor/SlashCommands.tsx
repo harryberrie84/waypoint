@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core';
+import { rankCommands } from '../lib/slashRank';
 import { holdPosition } from './heldPosition';
 import Suggestion, { exitSuggestion } from '@tiptap/suggestion';
 import type { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion';
@@ -1215,9 +1216,7 @@ export const SlashCommands = Extension.create({
           if (q.startsWith('calc:')) return calcItems(query.trim().slice(5));
           if (q.startsWith('convert:')) return convertItems(query.trim().slice(8));
           if (!q) return COMMANDS.filter(allowed);
-          return COMMANDS.filter(allowed).filter(
-            (c) => c.title.toLowerCase().includes(q) || c.keywords.some((k) => k.includes(q)),
-          );
+          return rankCommands(COMMANDS.filter(allowed), q);
         },
         render: makeRenderer,
         allow: ({ state, range }) => {

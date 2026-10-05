@@ -92,6 +92,19 @@ export default async function () {
         eq(await ed.locator('hr').count(), before + 1, 'dividers');
       });
 
+    await check('the command you type by name is the first one offered',
+      'Typing /embed offered Synced page first and /formula offered Math first, so Enter inserted the wrong block.',
+      async () => {
+        for (const [q, title] of [['/embed', 'Embed'], ['/formula', 'Formula'], ['/table', 'Table']]) {
+          await fresh();
+          await page.keyboard.type(q);
+          await opens(q);
+          const first = (await page.locator('div[style*="z-index: 1300"] button').first().innerText()).split('\n')[0].trim();
+          eq(first, title, `the first offer for ${q}`);
+        }
+        await page.keyboard.press('Escape');
+      });
+
     await check('nothing along the way was refused by the server',
       'A refused save is invisible in the UI and lost on reload.',
       async () => eq(app.problems, [], 'failed requests or page errors'));
