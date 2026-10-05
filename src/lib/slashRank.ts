@@ -20,13 +20,38 @@ function rank(item: Rankable, q: string): number {
   return -1;
 }
 
-/** The items matching `query`, best match first. */
-export function rankCommands<T extends Rankable>(items: T[], query: string): T[] {
+/** The items matching `query`, best match first. Within matches equally good,
+ *  the ones picked most often here come first (`usage`, picks per title), then
+ *  the list's own order. An exact name still always wins. */
+export function rankCommands<T extends Rankable>(items: T[], query: string, usage: Record<string, number> = {}): T[] {
   const q = query.toLowerCase().trim();
   if (!q) return items;
   return items
-    .map((item, i) => ({ item, i, r: rank(item, q) }))
+    .map((item, i) => ({ item, i, r: rank(item, q), u: usage[item.title] ?? 0 }))
     .filter((x) => x.r >= 0)
-    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .sort((a, b) => a.r - b.r || b.u - a.u || a.i - b.i)
     .map((x) => x.item);
+}
+
+// Picks are counted on this device only (they say nothing worth syncing, and
+// they never leave the browser).
+const USAGE_KEY = 'waypoint:slashUsage';
+
+export function readSlashUsage(): Record<string, number> {
+  try {
+    const v = JSON.parse(localStorage.getItem(USAGE_KEY) || '{}');
+    return v && typeof v === 'object' ? (v as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function noteSlashPick(title: string): void {
+  try {
+    const usage = readSlashUsage();
+    usage[title] = (usage[title] ?? 0) + 1;
+    localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
+  } catch {
+    /* storage unavailable: ranking just falls back to the list order */
+  }
 }

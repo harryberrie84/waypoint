@@ -95,7 +95,7 @@ export default async function () {
     await check('the command you type by name is the first one offered',
       'Typing /embed offered Synced page first and /formula offered Math first, so Enter inserted the wrong block.',
       async () => {
-        for (const [q, title] of [['/embed', 'Embed'], ['/formula', 'Formula'], ['/table', 'Table']]) {
+        for (const [q, title] of [['/embed', 'Embed'], ['/formula', 'Formula'], ['/table', 'Table'], ['/page', 'Page']]) {
           await fresh();
           await page.keyboard.type(q);
           await opens(q);

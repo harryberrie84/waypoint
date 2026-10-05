@@ -5820,6 +5820,18 @@ test('slash menu: the command you name comes first, and nothing that matched bef
   eq(titles('youtube'), ['Embed'], 'a keyword alone matches');
   eq(titles('zzz'), [], 'no match, nothing offered');
   eq(titles('').length, items.length, 'an empty query offers everything');
+  const pages = [
+    { title: 'Synced page', keywords: ['synced', 'embed page'] },
+    { title: 'Page', keywords: ['page', 'subpage'] },
+  ];
+  eq(rankCommands(pages, 'page').map((i) => i.title), ['Page', 'Synced page'], '/page offers the page itself first');
+  const ta = [
+    { title: 'Table of contents', keywords: [] },
+    { title: 'Table', keywords: [] },
+    { title: 'Tabletop dice', keywords: [] },
+  ];
+  eq(rankCommands(ta, 'tab', { 'Tabletop dice': 5, Table: 2 }).map((i) => i.title), ['Tabletop dice', 'Table', 'Table of contents'], 'among equal matches, the most picked comes first');
+  eq(rankCommands(ta, 'table', { 'Tabletop dice': 50 }).map((i) => i.title)[0], 'Table', 'an exact name still beats a much-picked near match');
 });
 
 console.log(`\n${passed}/${passed + failed} passed`);
