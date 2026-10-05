@@ -13,6 +13,9 @@
 // rule, applies only the sent fields through the regular form (so validation,
 // hooks and realtime all behave as usual) and commits. Overlapping saves wait
 // their turn instead of overwriting each other.
+//
+// For table_rows it also takes `cellsMerge`, a set of changed cells merged into
+// the row's current cells inside the same transaction.
 
 routerAdd(
   "PATCH",
@@ -41,6 +44,31 @@ routerAdd(
         var rule = record.collection().updateRule;
         if (rule === null || rule === undefined) throw new ForbiddenError();
         if (!txDao.canAccessRecord(record, info, rule)) throw new NotFoundError();
+      }
+      // A row's cells are one JSON field, so two people changing different cells
+      // of the same row at the same moment still overwrote each other: each sent
+      // the whole set as they had last read it. `cellsMerge` carries only the
+      // cells that changed, merged here into the cells as committed now, under
+      // the lock above. Rows whose cells are sealed (encrypted workspaces) are
+      // left to the client, which can read them.
+      if (name === "table_rows" && data.cellsMerge && typeof data.cellsMerge === "object") {
+        var current = {};
+        try {
+          current = JSON.parse(record.getString("cells") || "{}") || {};
+        } catch (_) {
+          current = {};
+        }
+        if (current.__enc) throw new BadRequestError("cells are sealed");
+        var patch = data.cellsMerge;
+        for (var k in patch) {
+          if (Object.prototype.hasOwnProperty.call(patch, k)) current[k] = patch[k];
+        }
+        var rest = {};
+        for (var f in data) {
+          if (f !== "cellsMerge" && Object.prototype.hasOwnProperty.call(data, f)) rest[f] = data[f];
+        }
+        rest.cells = current;
+        data = rest;
       }
       var form = new RecordUpsertForm($app, record);
       form.setDao(txDao);

@@ -50,6 +50,39 @@ export default async function () {
         ok((await save('table_rows', r.id, { cells: { a: 1 } }, ed.token)).status === 200, 'an editor edits a row');
         refused(await save('pages', p.id, { title: 'x'.repeat(600) }, owner.token), 'a title longer than the field allows');
       });
+
+    await check('two people changing different cells of one row at the same moment both keep their change',
+      'A row keeps all its cells in one field. Each person sent the whole set as they last read it, so the later save put back the old value of the other person\'s cell.',
+      async () => {
+        const t = await api.must(api.create('tables', { name: 'cells', workspace: ws.id }, owner.token), 'table');
+        let lost = 0;
+        for (let trial = 0; trial < 10; trial++) {
+          const r = await api.must(api.create('table_rows', { table: t.id, workspace: ws.id, cells: { a: 'old', b: 0, c: 'keep' } }, owner.token), 'row');
+          const res = await Promise.all([
+            save('table_rows', r.id, { cellsMerge: { a: `owner ${trial}` } }, owner.token),
+            save('table_rows', r.id, { cellsMerge: { b: trial + 1 } }, ed.token),
+          ]);
+          ok(res.every((x) => x.status === 200), `a save failed: ${res.map((x) => x.status).join()}`);
+          const back = (await api.get('table_rows', r.id, owner.token)).data.cells;
+          if (back.a !== `owner ${trial}`) lost++;
+          if (back.b !== trial + 1) lost++;
+          eq(back.c, 'keep', 'a cell nobody touched');
+        }
+        eq(lost, 0, 'cell edits lost across 10 rounds of two overlapping saves');
+      });
+
+    await check('merging cells keeps the access rules, and leaves sealed cells to the app',
+      'The merge is a second way to write a row. It must refuse whoever a normal save refuses, and must not touch encrypted cells it cannot read.',
+      async () => {
+        const t = await api.must(api.create('tables', { name: 'rules', workspace: ws.id }, owner.token), 'table');
+        const r = await api.must(api.create('table_rows', { table: t.id, workspace: ws.id, cells: { a: 1 } }, owner.token), 'row');
+        refused(await save('table_rows', r.id, { cellsMerge: { a: 2 } }, viewer.token), 'viewer merges a cell');
+        refused(await save('table_rows', r.id, { cellsMerge: { a: 2 } }, outsider.token), 'outsider merges a cell');
+        eq((await api.get('table_rows', r.id, owner.token)).data.cells.a, 1, 'the refused merges changed nothing');
+        const sealed = await api.must(api.create('table_rows', { table: t.id, workspace: ws.id, cells: { __enc: 'enc:v1:abc' } }, owner.token), 'sealed row');
+        refused(await save('table_rows', sealed.id, { cellsMerge: { a: 2 } }, owner.token), 'a merge into sealed cells');
+        eq((await api.get('table_rows', sealed.id, owner.token)).data.cells, { __enc: 'enc:v1:abc' }, 'the sealed cells are untouched');
+      });
   } finally {
     await pb.stop();
   }

@@ -29,6 +29,24 @@ export default async function () {
         ok(pages.some((p) => p.title === 'Hookless'), `the title on the server: ${JSON.stringify(pages.map((p) => p.title))}`);
       });
 
+    await check('a table cell typed on a server without the hooks is saved',
+      'Cells are saved by merging only the changed ones on the server. A server without that hook (or with an older one) ignores the merge, and the app must notice and save the way it did before.',
+      async () => {
+        const ed = page.locator('.ProseMirror[contenteditable="true"]').first();
+        await ed.click();
+        await page.keyboard.press('Control+End');
+        await page.keyboard.press('Enter');
+        await page.keyboard.type('/table');
+        await page.locator('div[style*="z-index: 1300"] button', { hasText: 'Relational database' }).click();
+        await page.getByText('New row').first().waitFor();
+        await page.locator('table tbody tr').first().locator('input').first().fill('Ferry without hooks');
+        await page.keyboard.press('Tab');
+        await page.waitForTimeout(2500);
+        const token = await page.evaluate(() => JSON.parse(localStorage.getItem('pocketbase_auth') || '{}').token);
+        const rows = await api.list('table_rows', token);
+        ok(rows.some((r) => Object.values(r.cells ?? {}).includes('Ferry without hooks')), `the cell on the server: ${JSON.stringify(rows.map((r) => r.cells))}`);
+      });
+
     await check('the only refused requests were the missing routes being probed',
       'Anything else refused here is a real failure on such a server.',
       async () => {

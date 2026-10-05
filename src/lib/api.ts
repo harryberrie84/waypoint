@@ -425,6 +425,25 @@ export const rowsApi = {
     const rec = await saveFields('table_rows', id, patch as Record<string, unknown>);
     return toRow(rec);
   },
+  /** Saves only the cells that changed, merged into the row's cells on the server
+   *  as they are now, so another person's edit to a different cell of the same
+   *  row can't be overwritten. Returns null when the server could not do it (an
+   *  older save hook ignores the merge, sealed cells are refused): the caller then
+   *  saves the way it did before. The reply is checked, never assumed. */
+  async mergeCells(id: string, changed: Record<string, CellValue>): Promise<TableRow | null> {
+    let rec: RecordModel;
+    try {
+      rec = await saveFields('table_rows', id, { cellsMerge: changed });
+    } catch (err) {
+      if ((err as { status?: number }).status === 400) return null;
+      throw err;
+    }
+    const row = toRow(rec);
+    for (const [k, v] of Object.entries(changed)) {
+      if (JSON.stringify(row.cells?.[k] ?? null) !== JSON.stringify(v ?? null)) return null;
+    }
+    return row;
+  },
   async remove(id: string): Promise<void> {
     await pb.collection('table_rows').delete(id);
   },

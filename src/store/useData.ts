@@ -828,6 +828,10 @@ async function dropPageYUpdates(pageId: string): Promise<void> {
 // store update each caller already applied.
 const serverColumns = new Map<string, Column[]>();
 const dirtyCells = new Map<string, Set<string>>();
+// The cells a save is sending right now, per row. With dirtyCells (typed, not yet
+// sent) these are the cells an echo must not rewind; every other cell in the echo
+// is someone else's and is taken.
+const savingCells = new Map<string, Set<string>>();
 
 function persistColumns(tableId: string, columns: Column[], label: string): void {
   const seq = beginWrite(tableId, 'columns');
@@ -1672,7 +1676,20 @@ export const useData = create<DataState>((set, get) => ({
         // keystroke would be dropped with no error. Keeping our decrypted copy is
         // last-write-wins, the same as the plaintext path.
         if (existing && !existing.cellsEnc && isWriting(record.id, 'cells')) {
-          merged = { ...merged, cells: existing.cells, cellsEnc: undefined };
+          const mine = new Set([...(dirtyCells.get(record.id) ?? []), ...(savingCells.get(record.id) ?? [])]);
+          if (!incoming.cellsEnc && mine.size > 0) {
+            // Keep only the cells being typed or sent here; take everyone else's.
+            // Holding the whole row hid another person's edit to a different cell
+            // of it until the next reload.
+            const cells = { ...incoming.cells };
+            for (const k of mine) {
+              if (k in existing.cells) cells[k] = existing.cells[k];
+              else delete cells[k];
+            }
+            merged = { ...merged, cells, cellsEnc: undefined };
+          } else {
+            merged = { ...merged, cells: existing.cells, cellsEnc: undefined };
+          }
         }
         // Encrypted-cells echo: if it carries the SAME envelope we already
         // decrypted (e.g. our own write coming back), keep the in-memory cells so
@@ -5090,27 +5107,48 @@ export const useData = create<DataState>((set, get) => ({
     const touched = dirtyCells.get(rowId) ?? new Set<string>();
     touched.add(columnId);
     dirtyCells.set(rowId, touched);
-    debounceWrite(`cell-${rowId}`, async () => {
+    const save = async (seq: number, attempt: number): Promise<void> => {
       const changed = [...(dirtyCells.get(rowId) ?? [])];
       dirtyCells.delete(rowId);
+      const sending = savingCells.get(rowId) ?? new Set<string>();
+      for (const k of changed) sending.add(k);
+      savingCells.set(rowId, sending);
       const local = get().rows[rowId]?.cells ?? nextCells;
       let merged = local;
       try {
-        const fresh = await rowsApi.get(rowId);
-        let serverCells: Record<string, CellValue> | null = fresh.cells;
-        if (fresh.cellsEnc) {
-          const secret = await useWorkspaceKeys.getState().decryptForWorkspace(ws, fresh.cellsEnc);
-          serverCells = secret && typeof secret === 'object' ? { ...fresh.cells, ...(secret as Record<string, CellValue>) } : null;
+        // Plain workspaces: the server merges just the changed cells into the row
+        // as it is committed now, so two people editing different cells of the
+        // same row at the same moment both keep their edit. Sealed cells
+        // (encrypted workspaces) can't be merged there and take the path below,
+        // as does a server whose save hook predates the merge.
+        let done = false;
+        if (!useWorkspace.getState().encryptedEnabled(ws)) {
+          const changedCells: Record<string, CellValue> = {};
+          for (const k of changed) changedCells[k] = local[k] ?? null;
+          // The reply is not copied to the screen: the screen already shows these
+          // cells, and other people's cells arrive by realtime (taken cell by cell,
+          // see applyServerChange). A reply landing after a newer update would put
+          // the older value back.
+          const saved = await rowsApi.mergeCells(rowId, changedCells);
+          if (saved) done = true;
         }
-        if (serverCells) merged = mergeCells(serverCells, local, changed);
-      } catch {
-        merged = local;
-      }
-      try {
-        const toStore = await cellsToPersist(ws, merged, cols);
-        if (toStore == null) return;
-        noteOwnCellsEnvelope(rowId, toStore);
-        await rowsApi.update(rowId, { cells: toStore });
+        if (!done) {
+          try {
+            const fresh = await rowsApi.get(rowId);
+            let serverCells: Record<string, CellValue> | null = fresh.cells;
+            if (fresh.cellsEnc) {
+              const secret = await useWorkspaceKeys.getState().decryptForWorkspace(ws, fresh.cellsEnc);
+              serverCells = secret && typeof secret === 'object' ? { ...fresh.cells, ...(secret as Record<string, CellValue>) } : null;
+            }
+            if (serverCells) merged = mergeCells(serverCells, local, changed);
+          } catch {
+            merged = local;
+          }
+          const toStore = await cellsToPersist(ws, merged, cols);
+          if (toStore == null) return;
+          noteOwnCellsEnvelope(rowId, toStore);
+          await rowsApi.update(rowId, { cells: toStore });
+        }
         if (merged !== local) {
           set((s) => {
             const row = s.rows[rowId];
@@ -5124,11 +5162,21 @@ export const useData = create<DataState>((set, get) => ({
       } catch (err) {
         console.error('[data] setCell failed', err);
         for (const k of changed) (dirtyCells.get(rowId) ?? dirtyCells.set(rowId, new Set()).get(rowId)!).add(k);
-        if (navigator.onLine) void get().hydrate();
+        // A dropped connection or a server hiccup is retried, holding the edit on
+        // screen meanwhile. It used to be kept as unsent and then never sent until
+        // the same row was edited again. A refusal (4xx) is final and resyncs.
+        const status = (err as { status?: number }).status ?? 0;
+        if ((status === 0 || status >= 500) && attempt < 4) {
+          const next = beginWrite(rowId, 'cells');
+          debounceWrite(`cell-${rowId}`, () => save(next, attempt + 1), 1500 * (attempt + 1));
+        } else if (navigator.onLine) void get().hydrate();
       } finally {
+        for (const k of changed) sending.delete(k);
+        if (sending.size === 0) savingCells.delete(rowId);
         endWrite(rowId, 'cells', seq);
       }
-    });
+    };
+    debounceWrite(`cell-${rowId}`, () => save(seq, 0));
 
     // Fire field-change automations (guarded against recursion).
     if (!automationRunning) {

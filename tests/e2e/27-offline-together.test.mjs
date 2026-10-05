@@ -110,6 +110,23 @@ export default async function () {
         eq(row.cells[amount.id], 450, 'next to the amount changed offline');
       });
 
+    await check('two people changing different cells of one row at the same moment both keep their change, on both screens',
+      'A row keeps all its cells in one record. Each person saved the whole row as they last saw it, so the later save put back the old value of the other person\'s cell.',
+      async () => {
+        await Promise.all([nameCell(a).fill('Ferry, both at once'), amountCell(b).fill('777')]);
+        await Promise.all([a.keyboard.press('Tab'), b.keyboard.press('Tab')]);
+        const table = (await api.list('tables', auth.token))[0];
+        const amount = table.columns.find((c) => c.type === 'number');
+        const name = table.columns[0];
+        await waitFor(async () => {
+          const [row] = await api.list('table_rows', auth.token, `&filter=${encodeURIComponent(`table="${table.id}"`)}&sort=position`);
+          return row?.cells?.[name.id] === 'Ferry, both at once' && row?.cells?.[amount.id] === 777;
+        }, 'both cells on the server', 15000);
+        for (const [p, who] of [[a, 'owner'], [b, 'member']]) {
+          await waitFor(async () => (await nameCell(p).inputValue()) === 'Ferry, both at once' && (await amountCell(p).inputValue()) === '777', `both cells on the ${who}'s screen`, 15000);
+        }
+      });
+
     await check('page text typed offline survives closing the tab before the connection comes back',
       'The offline notice promises page text is kept on this device. Closing the tab while offline is exactly when that promise matters.',
       async () => {
