@@ -96,11 +96,23 @@ export default async function () {
       'Typing /embed offered Synced page first and /formula offered Math first, so Enter inserted the wrong block.',
       async () => {
         for (const [q, title] of [['/embed', 'Embed'], ['/formula', 'Formula'], ['/table', 'Table'], ['/page', 'Page']]) {
-          await fresh();
+          // A clean line at the top of the page, away from the blocks the checks
+          // above left at the end of it.
+          await page.keyboard.press('Escape');
+          await ed.click();
+          await page.keyboard.press('Control+Home');
+          await page.keyboard.press('Enter');
+          await page.keyboard.press('ArrowUp');
+          await page.waitForTimeout(150);
           await page.keyboard.type(q);
           await opens(q);
-          const first = (await page.locator('div[style*="z-index: 1300"] button').first().innerText()).split('\n')[0].trim();
-          eq(first, title, `the first offer for ${q}`);
+          // The list redraws a beat after the last key; read it once it has.
+          const firstOffer = async () => (await page.locator('div[style*="z-index: 1300"] button').first().innerText()).split('\n')[0].trim();
+          await waitFor(async () => (await firstOffer()) === title, `the first offer for ${q} to be ${title}`, 3000).catch(() => {});
+          eq(await firstOffer(), title, `the first offer for ${q}`);
+          await page.keyboard.press('Escape');
+          await page.keyboard.press('Shift+Home');
+          await page.keyboard.press('Backspace');
         }
         await page.keyboard.press('Escape');
       });
